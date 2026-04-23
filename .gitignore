@@ -1,0 +1,27 @@
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Dependencies (vendor/ is committed; node_modules for tooling is not)
+node_modules/
+
+# Local-only / sensitive — never commit
+private/
+fixtures/real/
+*.xlsx
+*.xls
+*.sqlite
+*.db
+*.portfolio
+.env
+.env.local
+
+# Build artifacts (when/if we add a build step)
+dist/
+build/
+
+# Test output
+coverage/
+playwright-report/
+test-results/

@@ -1,0 +1,126 @@
+{
+  "AUT": [
+    "Tourisme et Affaires, usage mixte",
+    "Camionnettes",
+    "Camions T.C.P (Transport Compte Propre)",
+    "Outils et Tracteurs",
+    "Véhicules spéciaux",
+    "Flotte mixte",
+    "Plaques marchands et Plaques essais",
+    "Plaques commerciales"
+  ],
+  "INC": [
+    "Incendie RSi - habitations",
+    "Incendie RSi - Maisons de commerce",
+    "Incendie RSi - Agriculture",
+    "Incendie RSi - Bureaux",
+    "Incendie RSp",
+    "Caravanning"
+  ],
+  "VIE": [
+    "Vie Individuelle (Branche 21)",
+    "Vie Individuelle Classique (Branche 21)",
+    "Vie Individuelle (Branches multiples)",
+    "Vie Individuelle à versements facultatifs (Universal Life)",
+    "Vie Collective à versements facultatifs (Universal life)",
+    "Bons d'assurance",
+    "Engagement individuel de pension - salarié",
+    "Groupe Indépendants",
+    "Revenu garanti",
+    "Dirigeants d'entreprise",
+    "Vie Groupe salariés"
+  ],
+  "IND": [
+    "Individuelle Accidents Général",
+    "Circulation & Passagers",
+    "Collective Accidents",
+    "Soins de santé"
+  ],
+  "RCF": [
+    "RC Vie privée",
+    "Multi-garantie RC particulier"
+  ],
+  "ASS": [
+    "Assistance (CBFA 18)",
+    "Assurances voyage"
+  ],
+  "GDM": [
+    "AT gens de maison"
+  ],
+  "HOS": [
+    "Hospitalisation",
+    "Familiale Hospitalisation"
+  ],
+  "LOI": [
+    "Accidents du travail (Loi)",
+    "Accidents du travail Secteur public",
+    "Accidents du travail excédent",
+    "Accidents du travail non assujettis"
+  ],
+  "PACE": [
+    "Multi-branches (Commerce, Petite industrie, Métiers manuels)",
+    "Polices regroupées AT, RC, ...",
+    "Polices regroupées Incendie Commerce + autres (RC, ...)",
+    "Police-package (commerce, petite industrie, métiers manuels)"
+  ],
+  "PACP": [
+    "Multi-branches (Particuliers)",
+    "Polices familiales regroupées Incendie + autres (RC, Famil.)",
+    "Police-package (particuliers)"
+  ],
+  "PJ": [
+    "Protection juridique Auto (Véhicule)",
+    "Protection juridique Vie Privée (éventuellement avec Auto)",
+    "PJ général (multi type d'objet)",
+    "PJ Activités professionnelles (éventuellement avec Auto)"
+  ],
+  "PLA": [
+    "Produits de placement",
+    "Vie Individuelle liée à un fonds d'investissement (br.23)"
+  ],
+  "RCA": [
+    "RC Entreprise",
+    "RC Entreprises et activités",
+    "RC Industrie, Commerce de gros",
+    "RC Professions (intellectuelles, libérales, commerciales)",
+    "RC Professions médicales",
+    "RC Animaux (e.a. Chevaux)",
+    "RC Organisateurs d'événements",
+    "RC Associations et Institutions",
+    "RC Chasse (AR 28/2/1977)",
+    "Responsabilité décennale",
+    "Responsabilité objective d'exploitants (loi du 30/7/1979)"
+  ],
+  "TRI": [
+    "Tous risques (particuliers)",
+    "Tous risques (entreprises)",
+    "Tous risques",
+    "Tous risques Electronique",
+    "Tous risques Immeuble",
+    "TRC (Tous Risques Chantier)"
+  ],
+  "TRP": [
+    "Transport routier (corps)",
+    "Dommages à marchandises transportées",
+    "Bateaux de plaisance (Corps & RC)",
+    "Véhicules maritimes (Corps & RC)"
+  ],
+  "VOL": [
+    "Vol",
+    "Vol Habitation",
+    "Toutes valeurs"
+  ],
+  "DIV": [
+    "Assurances Animaux",
+    "Bris de machines",
+    "Evénement"
+  ],
+  "TECH": [],
+  "CRED": [
+    "Prêts Hypothécaires"
+  ],
+  "MOT": [
+    "Motocyclettes",
+    "Cyclomoteurs"
+  ]
+}
