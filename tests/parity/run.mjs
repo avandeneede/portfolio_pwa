@@ -11,29 +11,47 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { computePartialStats } from '../../src/core/analyzer.js';
+import {
+  computeAllStats,
+  computeClientTotal,
+  extractMetricsFlat,
+  buildMetricTree,
+} from '../../src/core/analyzer.js';
+import { buildBranchIndex } from '../../src/core/branch_mapping.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
 const FIX = join(ROOT, 'tests', 'fixtures', 'synthetic');
+const CONFIG = join(ROOT, 'config', 'branch_mapping.json');
 const SNAPSHOT_YEAR = 2026;
 
-async function readJson(p) {
-  return JSON.parse(await readFile(p, 'utf8'));
-}
+async function readJson(p) { return JSON.parse(await readFile(p, 'utf8')); }
 
-// Sort object keys recursively so JSON.stringify is stable.
-function sortKeys(value) {
-  if (Array.isArray(value)) return value.map(sortKeys);
-  if (value !== null && typeof value === 'object') {
+function sortKeys(v) {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (v !== null && typeof v === 'object') {
     const out = {};
-    for (const k of Object.keys(value).sort()) out[k] = sortKeys(value[k]);
+    for (const k of Object.keys(v).sort()) out[k] = sortKeys(v[k]);
     return out;
   }
-  return value;
+  return v;
 }
 
-// Walk two values and return a list of differences.
+// Canonicalize JS output to match Python's canonicalization:
+// - opportunities.cross_sell[*].current_branch dropped (set-order ambiguity)
+// - opportunities.{succession,young_families,high_value}[*].current_branches sorted
+function canonicalize(baseline) {
+  const opp = baseline?.stats?.opportunities;
+  if (!opp) return baseline;
+  for (const row of opp.cross_sell ?? []) delete row.current_branch;
+  for (const group of ['succession', 'young_families', 'high_value']) {
+    for (const row of opp[group] ?? []) {
+      if (Array.isArray(row.current_branches)) row.current_branches = [...row.current_branches].sort();
+    }
+  }
+  return baseline;
+}
+
 function diff(expected, actual, path = '') {
   const diffs = [];
   if (typeof expected !== typeof actual) {
@@ -42,9 +60,8 @@ function diff(expected, actual, path = '') {
   }
   if (expected === null || actual === null || typeof expected !== 'object') {
     if (expected !== actual) {
-      // Treat -0 === 0, and compare numbers with tight tolerance for float noise.
-      if (typeof expected === 'number' && typeof actual === 'number') {
-        if (Math.abs(expected - actual) < 1e-9) return diffs;
+      if (typeof expected === 'number' && typeof actual === 'number' && Math.abs(expected - actual) < 1e-9) {
+        return diffs;
       }
       diffs.push({ path, expected, actual, kind: 'value' });
     }
@@ -72,29 +89,41 @@ function diff(expected, actual, path = '') {
 }
 
 async function main() {
+  const mapping = await readJson(CONFIG);
+  const branchIndex = buildBranchIndex(mapping);
   const clients = await readJson(join(FIX, 'clients.json'));
   const polices = await readJson(join(FIX, 'polices.json'));
+  const compagnies = await readJson(join(FIX, 'compagnies.json'));
+  const sinistres = await readJson(join(FIX, 'sinistres.json'));
   const baseline = await readJson(join(HERE, 'baseline.json'));
 
-  const actual = computePartialStats(clients, polices, SNAPSHOT_YEAR);
+  const stats = computeAllStats(clients, polices, compagnies, sinistres, SNAPSHOT_YEAR, branchIndex);
+  const client_total = computeClientTotal(clients, polices, compagnies, SNAPSHOT_YEAR, branchIndex);
+  const flat = extractMetricsFlat(stats);
+  const tree = buildMetricTree(new Set(Object.keys(flat)));
 
+  const actual = canonicalize({ stats, client_total, flat, tree });
   const sortedBaseline = sortKeys(baseline);
   const sortedActual = sortKeys(actual);
 
   const diffs = diff(sortedBaseline, sortedActual);
   if (diffs.length === 0) {
-    console.log(`parity ✔ (${Object.keys(baseline).length} sections, ` +
-      `overview.total=${baseline.overview.total}, ` +
-      `geographic.rows=${baseline.geographic.rows.length}, ` +
-      `demographics.unknown_age=${baseline.demographics.unknown_age})`);
+    console.log(
+      `parity ✔  stats.sections=${Object.keys(baseline.stats).length}  ` +
+      `client_total=${baseline.client_total.length}  ` +
+      `flat=${Object.keys(baseline.flat).length}  ` +
+      `tree=${baseline.tree.length}`
+    );
     process.exit(0);
   }
 
   console.error(`parity ✘ — ${diffs.length} difference(s):`);
-  for (const d of diffs.slice(0, 30)) {
-    console.error(`  ${d.path}  expected=${JSON.stringify(d.expected)}  actual=${JSON.stringify(d.actual)}  (${d.kind})`);
+  for (const d of diffs.slice(0, 40)) {
+    const exp = JSON.stringify(d.expected);
+    const act = JSON.stringify(d.actual);
+    console.error(`  ${d.path}  expected=${exp}  actual=${act}  (${d.kind})`);
   }
-  if (diffs.length > 30) console.error(`  ... and ${diffs.length - 30} more`);
+  if (diffs.length > 40) console.error(`  ... and ${diffs.length - 40} more`);
   process.exit(1);
 }
 
