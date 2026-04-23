@@ -17,6 +17,10 @@ fixtures/real/
 .env
 .env.local
 
+# Python (baseline runner + fixture generator)
+__pycache__/
+*.pyc
+
 # Build artifacts (when/if we add a build step)
 dist/
 build/
