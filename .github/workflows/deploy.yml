@@ -1,0 +1,86 @@
+name: Deploy to GitHub Pages
+
+# Build artifact = the whole repo (pure static, no build step), minus
+# private/test/fixture/reference directories. We upload a pruned tarball
+# so that no synthetic fixtures or reference Python code ship to Pages.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate fixtures
+        run: python3 tests/fixtures/generate.py
+
+      - name: Run Python baseline
+        run: python3 tests/parity/python_baseline.py
+
+      - name: Parity check (JS ↔ Python)
+        run: node tests/parity/run.mjs
+
+      - name: Smoke tests
+        run: node tests/smoke/run.mjs
+
+      - name: Prepare deploy directory
+        run: |
+          mkdir -p _site
+          # Copy everything except dev-only and sensitive directories
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='tests' \
+            --exclude='reference' \
+            --exclude='private' \
+            --exclude='fixtures' \
+            --exclude='node_modules' \
+            --exclude='PLAN.md' \
+            --exclude='README.md' \
+            --exclude='*.xlsx' \
+            --exclude='*.xls' \
+            --exclude='*.sqlite' \
+            --exclude='*.db' \
+            --exclude='*.portefeuille' \
+            --exclude='__pycache__' \
+            ./ _site/
+          ls -la _site/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -53,9 +53,25 @@ sw.js manifest.webmanifest index.html
 
 ## Status
 
-Pre-code. Seeding only. See [`PLAN.md`](./PLAN.md) for the full migration plan, the gstack review findings, and the decisions (D1–D8) that override the original draft.
+MVP shipped. All core flows are in: snapshot upload (Excel → parse → preview → commit), dashboard (KPIs + 7 sections computed client-side from the parity-verified analyzer), encrypted backup export/import, settings, offline service worker.
 
-**Next milestone:** JS port of `reference/analyzer.py` → `src/core/analyzer.js` with a CPython-vs-JS parity harness.
+- **Analyzer parity** (`tests/parity/run.mjs`): JS ↔ Python byte-for-byte on 300-client synthetic fixtures, all 11 sections + flat metrics + tree.
+- **Smoke tests** (`tests/smoke/run.mjs`): crypto round-trip, wrong-passphrase/corruption guards, SheetJS parse, sql.js schema+insert+fetch+export.
+- **Deploy**: GitHub Actions → Pages, static, no build step. Tests run before deploy.
+
+## Running locally
+
+```bash
+# Static serve — any HTTP server works. COOP/COEP not required.
+python3 -m http.server 8000
+# → http://localhost:8000/
+
+# Tests
+python3 tests/fixtures/generate.py
+python3 tests/parity/python_baseline.py
+node tests/parity/run.mjs    # JS ↔ Python parity
+node tests/smoke/run.mjs     # crypto + parser + db
+```
 
 ## Not in this repo
 
