@@ -4,6 +4,7 @@ import { h, mount } from '../ui/dom.js';
 import { t } from '../i18n/index.js';
 import { toast } from '../ui/toast.js';
 import { formatInt } from '../ui/format.js';
+import { icon, iconTile } from '../ui/icon.js';
 
 const TABLE_OF_TYPE = {
   clients: 'clients',
@@ -28,7 +29,7 @@ export function renderPreview(root, ctx) {
 
   const state = { busy: false };
 
-  const cta = h('button', { class: 'btn', onClick: handleConfirm }, t('preview.confirm'));
+  const cta = h('button', { class: 'btn primary', onClick: handleConfirm }, t('preview.confirm'));
   function updateCta() {
     cta.disabled = state.busy;
     cta.textContent = state.busy ? t('common.loading') : t('preview.confirm');
@@ -50,7 +51,7 @@ export function renderPreview(root, ctx) {
       }
       await ctx.persistDb();
       ctx.pendingUpload = null;
-      toast(t('preview.confirm') + ' ✓', 'success');
+      toast(t('preview.confirm'), 'success');
       ctx.navigate(`/snapshot/${snapshotId}`);
     } catch (e) {
       console.error(e);
@@ -61,24 +62,32 @@ export function renderPreview(root, ctx) {
 
   const warnings = pending.parsed.flatMap((p) => (p.warnings || []).map((w) => `${p.filename}: ${w}`));
 
-  mount(root, h('div', { class: 'wrap' }, [
-    h('div', { class: 'nav' }, [
-      h('button', { class: 'back', onClick: () => ctx.navigate('/upload') }, '‹ ' + t('nav.back')),
-      h('div', { class: 'title' }, t('preview.title')),
-      h('div', { style: { width: '60px' } }),
+  mount(root, h('div', { class: 'page' }, [
+    h('div', { class: 'page-head' }, [
+      h('div', { class: 'page-head-main' }, [
+        h('button', {
+          class: 'back-link',
+          onClick: () => ctx.navigate('/upload'),
+          type: 'button',
+        }, [
+          icon('chevron.left', { size: 16 }),
+          h('span', {}, t('nav.back')),
+        ]),
+        h('h1', { class: 'page-title' }, t('preview.title')),
+      ]),
     ]),
 
-    h('div', { class: 'section-head' }, h('span', {}, 'Fichiers reconnus')),
+    h('div', { class: 'section-head' }, h('span', {}, t('preview.recognized'))),
     h('div', { class: 'group' },
       pending.parsed.map((p) => h('div', { class: 'row' }, [
-        h('div', { class: 'icon-tile',
-          style: { '--tile-bg': p.type ? '#34c759' : '#ff9500' } },
-          p.type ? '✓' : '?'),
+        p.type
+          ? iconTile('checkmark.circle', '--success')
+          : iconTile('questionmark.circle', '--warning'),
         h('div', { class: 'row-main' }, [
           h('div', { class: 'row-title' }, p.type ? TYPE_LABEL[p.type] : p.filename),
           h('div', { class: 'row-sub' }, p.type
             ? `${p.filename} · ${t('preview.rows', { count: p.row_count }).replace('{count}', formatInt(p.row_count))}`
-            : 'Type non reconnu'),
+            : t('preview.type_unknown')),
         ]),
       ]))
     ),
@@ -94,7 +103,7 @@ export function renderPreview(root, ctx) {
       ),
     ] : null,
 
-    h('div', { style: { marginTop: '24px', display: 'flex', gap: '12px' } }, [
+    h('div', { class: 'form-actions' }, [
       h('button', {
         class: 'btn secondary',
         onClick: () => { ctx.pendingUpload = null; ctx.navigate('/upload'); },

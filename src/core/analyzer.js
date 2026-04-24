@@ -35,18 +35,237 @@ function counterInc(map, key, by = 1) {
   map.set(key, (map.get(key) || 0) + by);
 }
 
-// Parse a date_naissance that may be null, ISO "YYYY-MM-DD", Date, or {year}.
+// Parse a date_naissance into a 4-digit year. Tolerant of every shape a broker
+// export (or an SQLite round-trip) has thrown at us so far:
+//   - null / ""                                              → null
+//   - Date instance                                          → UTC year
+//   - { year: Number }                                       → that year
+//   - ISO-ish strings "YYYY-MM-DD…", "YYYY/MM/DD"            → YYYY
+//   - European "DD/MM/YYYY", "DD-MM-YYYY", "DD.MM.YYYY"     → YYYY
+//   - US-style "M/D/YYYY" via Date fallback                  → YYYY
+//   - Excel serial numbers (days since 1899-12-30)           → UTC year
+//   - Bare 4-digit year ("1975" or number 1975)              → that year
+// Kept intentionally forgiving because recompute runs against rows that were
+// imported by older parser versions — we don't get to re-clean them.
 function yearOf(dn) {
-  if (dn == null) return null;
-  if (typeof dn === 'object' && typeof dn.year === 'number') return dn.year;
-  if (typeof dn === 'string') {
-    const m = /^(\d{4})-\d{2}-\d{2}/.exec(dn);
-    if (m) return Number(m[1]);
-  }
+  if (dn == null || dn === '') return null;
   if (dn instanceof Date && !Number.isNaN(dn.valueOf())) {
     return dn.getUTCFullYear();
   }
+  if (typeof dn === 'object') {
+    if (typeof dn.year === 'number') return dn.year;
+    return null;
+  }
+  if (typeof dn === 'number' && Number.isFinite(dn)) {
+    // A bare year.
+    if (dn >= 1900 && dn <= 2100) return Math.floor(dn);
+    // Excel serial (days since 1899-12-30). Plausible birth-date range.
+    if (dn > 1000 && dn < 80000) {
+      const ms = Math.round((dn - 25569) * 86400 * 1000);
+      const d = new Date(ms);
+      if (!Number.isNaN(d.valueOf())) {
+        const y = d.getUTCFullYear();
+        if (y >= 1900 && y <= 2100) return y;
+      }
+    }
+    return null;
+  }
+  if (typeof dn !== 'string') return null;
+  const s = dn.trim();
+  if (!s) return null;
+  // ISO / slash-ISO: YYYY-MM-DD, YYYY/MM/DD.
+  const iso = /^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/.exec(s);
+  if (iso) return Number(iso[1]);
+  // European DD[sep]MM[sep]YYYY.
+  const eu = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/.exec(s);
+  if (eu) return Number(eu[3]);
+  // Bare 4-digit year as text.
+  const bare = /^(\d{4})$/.exec(s);
+  if (bare) {
+    const y = Number(bare[1]);
+    if (y >= 1900 && y <= 2100) return y;
+  }
+  // Any 4-digit year embedded in the string (e.g. "1er janvier 1968").
+  const embedded = /(?:^|\D)(19\d{2}|20\d{2})(?:\D|$)/.exec(s);
+  if (embedded) return Number(embedded[1]);
+  // Last-ditch: let the runtime try.
+  const d = new Date(s);
+  if (!Number.isNaN(d.valueOf())) {
+    const y = d.getUTCFullYear();
+    if (y >= 1900 && y <= 2100) return y;
+  }
   return null;
+}
+
+// Broker exports sometimes prefix the locality with a country code:
+// "B - BRUXELLES", "NL - AMSTERDAM", "LUX - LUXEMBOURG". Strip that so the
+// commune column reads cleanly. Keeps casing otherwise untouched.
+function cleanCommune(s) {
+  if (s == null) return '';
+  const str = String(s).trim();
+  if (!str) return '';
+  return str.replace(/^[A-Za-z]{1,3}\s*-\s*/, '').trim();
+}
+
+// Some rows were imported before the `date_de_naissance` header alias existed;
+// for forward-compatible recomputes, read either key so the fallback shape
+// continues to work.
+function getDateNaissance(c) {
+  return c.date_naissance ?? c.date_de_naissance ?? null;
+}
+
+// Parse a birth-date value to a {y,m,d} triple using the same forgiving rules
+// as yearOf. Returns null when only a year can be recovered.
+function parseDateParts(dn) {
+  if (dn == null || dn === '') return null;
+  if (dn instanceof Date && !Number.isNaN(dn.valueOf())) {
+    return { y: dn.getUTCFullYear(), m: dn.getUTCMonth() + 1, d: dn.getUTCDate() };
+  }
+  if (typeof dn === 'number' && Number.isFinite(dn)) {
+    if (dn > 1000 && dn < 80000) {
+      const ms = Math.round((dn - 25569) * 86400 * 1000);
+      const d = new Date(ms);
+      if (!Number.isNaN(d.valueOf())) {
+        return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() };
+      }
+    }
+    return null;
+  }
+  if (typeof dn !== 'string') return null;
+  const s = dn.trim();
+  if (!s) return null;
+  const iso = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/.exec(s);
+  if (iso) return { y: Number(iso[1]), m: Number(iso[2]), d: Number(iso[3]) };
+  const eu = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/.exec(s);
+  if (eu) return { y: Number(eu[3]), m: Number(eu[2]), d: Number(eu[1]) };
+  const dt = new Date(s);
+  if (!Number.isNaN(dt.valueOf())) {
+    const y = dt.getUTCFullYear();
+    if (y >= 1900 && y <= 2100) {
+      return { y, m: dt.getUTCMonth() + 1, d: dt.getUTCDate() };
+    }
+  }
+  return null;
+}
+
+// Format a birth date as DD/MM/YYYY, matching the reference xlsx output.
+function formatDateFR(dn) {
+  const p = parseDateParts(dn);
+  if (!p) return null;
+  const dd = String(p.d).padStart(2, '0');
+  const mm = String(p.m).padStart(2, '0');
+  return `${dd}/${mm}/${p.y}`;
+}
+
+// Reference xlsx uses French labels for gender ("Masculin" / "Féminin").
+// Raw broker exports may provide 'M', 'F', 'Masculin', 'Féminin', 'Man',
+// 'Vrouw', 'Male', 'Female' — normalize them all here.
+function formatSexe(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return null;
+  if (s === 'm' || s === 'masculin' || s === 'man' || s === 'male' || s === 'h' || s === 'homme') return 'Masculin';
+  if (s === 'f' || s === 'feminin' || s === 'féminin' || s === 'vrouw' || s === 'female' || s === 'femme') return 'Féminin';
+  return null;
+}
+
+// Broker Phenix convention: dossiers 9990+ are internal/utility records for
+// assistance companies, reinsurers, and a catch-all "TOUT LE MONDE" entry.
+// They have policies attached but are not real clients, so they inflate
+// active-client counts, Personne-morale breakdowns, and the CLIENT TOTAL
+// export. Exclude them from all analyses.
+function isUtilityClient(c) {
+  const d = Number(String(c?.dossier ?? '').trim());
+  return Number.isFinite(d) && d >= 9990;
+}
+
+// Given the full set of clients, returns the dossier_keys to exclude so we
+// can also prune the matching polices / compagnies / sinistres rows.
+function utilityKeys(clients) {
+  const out = new Set();
+  for (const c of clients) {
+    if (isUtilityClient(c) && c.dossier_key) out.add(c.dossier_key);
+  }
+  return out;
+}
+
+function excludeUtility(clients, polices, compagniePolices, sinistres) {
+  const drop = utilityKeys(clients);
+  if (drop.size === 0) return { clients, polices, compagniePolices, sinistres };
+  return {
+    clients: clients.filter((c) => !drop.has(c.dossier_key)),
+    polices: (polices || []).filter((p) => !drop.has(p.dossier_key)),
+    compagniePolices: (compagniePolices || []).filter((p) => !drop.has(p.dossier_key)),
+    sinistres: (sinistres || []).filter((s) => !drop.has(s.dossier_key)),
+  };
+}
+
+// Policy types that, by themselves, mark a client as Entreprise (E) in the
+// reference rapport. Derived empirically from the 12/2019 snapshot by matching
+// CLIENT TOTAL's Type PE column: every type below is 100% E-coded in the ref
+// xlsx (never appears on a P-classified client). Combined with pm=morale and
+// statut_social=Travailleur indépendant this reproduces 1983/1983 Type PE.
+const ENTREPRISE_POLICY_TYPES = new Set([
+  "RC Entreprise",
+  "Incendie RSi - Maisons de commerce",
+  "Accidents du travail (Loi)",
+  "Groupe Indépendants",
+  "Outils et Tracteurs",
+  "RC Professions médicales",
+  "Dirigeants d'entreprise",
+  "Multi-branches (Commerce, Petite industrie, Métiers manuels)",
+  "Polices regroupées AT, RC, ...",
+  "Incendie RSi - Bureaux",
+  "Revenu garanti",
+  "RC Industrie, Commerce de gros",
+  "Tous risques Electronique",
+  "Responsabilité objective d'exploitants (loi du 30/7/1979)",
+  "Vie Groupe salariés",
+  "Responsabilité décennale",
+  "Plaques marchands et Plaques essais",
+  "Incendie RSi - Agriculture",
+  "PJ Activités professionnelles (éventuellement avec Auto)",
+  "Dommages à marchandises transportées",
+  "Multi-branches (Particuliers)",
+  "Flotte mixte",
+  "TRC (Tous Risques Chantier)",
+  "Bris de machines",
+  "Accidents du travail Secteur public",
+  "Police-package (commerce, petite industrie, métiers manuels)",
+  "Tous risques (entreprises)",
+  "Collective Accidents",
+  "Accidents du travail non assujettis",
+  "Transport routier (corps)",
+  "Polices regroupées Incendie Commerce + autres (RC, ...)",
+  "Accidents du travail excédent",
+]);
+
+// Build the set of dossier_keys that should be classified as Entreprise (E).
+// A client is E when ANY of:
+//   - physique_morale = "Personne morale"
+//   - statut_social = "Travailleur indépendant"
+//   - holds at least one policy whose type is in ENTREPRISE_POLICY_TYPES
+// Everything else is Particulier (P). "Groupement de personnes..." is treated
+// as P unless it also matches the policy-type rule, because the ref xlsx
+// classifies the sole groupement (RESIDENCE "BERNHEIM 69") as P.
+export function computeEntrepriseKeys(clients, polices) {
+  const out = new Set();
+  for (const c of clients) {
+    const dk = c.dossier_key;
+    if (!dk) continue;
+    const pm = String(c.physique_morale ?? '').trim().toLowerCase();
+    const ss = String(c.statut_social ?? '').trim().toLowerCase();
+    if (pm === 'personne morale') { out.add(dk); continue; }
+    if (ss === 'travailleur indépendant' || ss === 'travailleur independant') {
+      out.add(dk);
+    }
+  }
+  for (const p of polices || []) {
+    if (!p.dossier_key) continue;
+    const t = String(p.type_police ?? '').trim();
+    if (ENTREPRISE_POLICY_TYPES.has(t)) out.add(p.dossier_key);
+  }
+  return out;
 }
 
 function isBlank(s) {
@@ -72,6 +291,8 @@ function sortByCountDesc(items, key = 'count') {
 export function normalizeAddress(rue) {
   if (!rue) return '';
   let s = String(rue).trim().toLowerCase();
+  // Strip parenthesized qualifiers ("Kasseide(Lie) 58" -> "Kasseide 58").
+  s = s.replace(/\s*\([^)]*\)\s*/g, ' ');
   s = s.replace(/[,./\-]/g, ' ');
   s = s.replace(/\s+/g, ' ').trim();
   s = s.replace(/\brué?\b/g, 'rue');
@@ -81,7 +302,11 @@ export function normalizeAddress(rue) {
   return s;
 }
 
-function isParticulier(c) {
+// A client is Particulier (P) unless they're in the entrepriseKeys set built
+// by computeEntrepriseKeys. When called without the set (back-compat/legacy
+// paths), falls back to the physique_morale-only heuristic.
+function isParticulier(c, entrepriseKeys) {
+  if (entrepriseKeys) return !entrepriseKeys.has(c.dossier_key);
   const v = String(c.physique_morale ?? '').trim().toLowerCase();
   return v === 'p' || v === 'physique' || v === 'personne physique' || v === '';
 }
@@ -90,7 +315,7 @@ function isParticulier(c) {
 // Section 1: Client Overview
 // ---------------------------------------------------------------------------
 
-export function computeClientOverview(clients, polices) {
+export function computeClientOverview(clients, polices, entrepriseKeys) {
   const total = clients.length;
   if (total === 0) {
     return {
@@ -99,8 +324,9 @@ export function computeClientOverview(clients, polices) {
       active_clients: 0, clients_sans_police: 0,
     };
   }
+  const eKeys = entrepriseKeys || computeEntrepriseKeys(clients, polices);
 
-  const particuliers = clients.reduce((n, c) => n + (isParticulier(c) ? 1 : 0), 0);
+  const particuliers = clients.reduce((n, c) => n + (isParticulier(c, eKeys) ? 1 : 0), 0);
   const entreprises = total - particuliers;
 
   const clientKeysWithPolices = new Set();
@@ -110,7 +336,7 @@ export function computeClientOverview(clients, polices) {
   let activeE = 0;
   for (const c of clients) {
     if (clientKeysWithPolices.has(c.dossier_key)) {
-      if (isParticulier(c)) activeP += 1;
+      if (isParticulier(c, eKeys)) activeP += 1;
       else activeE += 1;
     }
   }
@@ -151,7 +377,7 @@ export function computeGeographicProfile(clients, cumulThreshold = 70.0) {
     if (cp && cp.toLowerCase() !== 'none') {
       counterInc(cpCounts, cp);
       if (!cpLocalite.has(cp)) {
-        const loc = String(c.localite ?? '').trim();
+        const loc = cleanCommune(c.localite);
         if (loc && loc.toLowerCase() !== 'none') cpLocalite.set(cp, loc);
       }
     }
@@ -195,7 +421,7 @@ export function computeGeographicProfile(clients, cumulThreshold = 70.0) {
 
 export function computeDemographics(clients, polices, snapshotYear) {
   const total = clients.length;
-  if (total === 0) return { gender: {}, age_brackets: [], total: 0 };
+  if (total === 0) return { gender: {}, age_brackets: [], total: 0, known_sexe: 0, known_age: 0 };
 
   // Gender — Python iterates in insertion order. We insert M, then F, then Inconnu
   // in the first order encountered, but the Python version uses a Counter that
@@ -212,10 +438,13 @@ export function computeDemographics(clients, polices, snapshotYear) {
     else if (sexe === 'F' || sexe === 'FÉMININ' || sexe === 'FEMININ') bumpGender('F');
     else bumpGender('Inconnu');
   }
+  const knownSexe = (genderCounts.get('M') || 0) + (genderCounts.get('F') || 0);
   const gender = {};
   for (const k of genderOrder) {
     const v = genderCounts.get(k);
-    gender[k] = { count: v, pct: pyRound(v / total * 100, 1) };
+    // Percent of known for M/F (matches ref rapport); percent of total for Inconnu.
+    const denom = (k === 'Inconnu') ? total : (knownSexe || 1);
+    gender[k] = { count: v, pct: pyRound(v / denom * 100, 1) };
   }
 
   // Age brackets
@@ -230,7 +459,7 @@ export function computeDemographics(clients, polices, snapshotYear) {
   for (const p of polices) if (p.dossier_key) counterInc(clientKeysPolices, p.dossier_key);
 
   for (const c of clients) {
-    const year = yearOf(c.date_naissance);
+    const year = yearOf(getDateNaissance(c));
     if (year == null) { unknownAge += 1; continue; }
     let age = snapshotYear - year;
     if (age < 0) age = 0;
@@ -246,14 +475,18 @@ export function computeDemographics(clients, polices, snapshotYear) {
     }
   }
 
+  // Percent of known age (matches ref rapport). Keep pct_total for callers that
+  // want share-of-all (page 10 ratios use this for "60+" share of the universe).
+  const knownAge = total - unknownAge;
   const age_brackets = bracketLabels.map((label) => ({
     label,
     client_count: bracketCounts.get(label),
     policy_count: bracketPolicyCounts.get(label),
-    pct: total ? pyRound(bracketCounts.get(label) / total * 100, 1) : 0,
+    pct: knownAge ? pyRound(bracketCounts.get(label) / knownAge * 100, 1) : 0,
+    pct_total: total ? pyRound(bracketCounts.get(label) / total * 100, 1) : 0,
   }));
 
-  return { gender, age_brackets, unknown_age: unknownAge, total };
+  return { gender, age_brackets, unknown_age: unknownAge, total, known_sexe: knownSexe, known_age: knownAge };
 }
 
 // ---------------------------------------------------------------------------
@@ -262,7 +495,7 @@ export function computeDemographics(clients, polices, snapshotYear) {
 
 export function computeCivilSocialStatus(clients) {
   const total = clients.length;
-  if (total === 0) return { civil_status: [], social_status: [], total: 0 };
+  if (total === 0) return { civil_status: [], social_status: [], total: 0, known_civil: 0, known_social: 0 };
 
   const mkOrdered = () => ({ order: [], counts: new Map() });
   const bump = (o, k) => {
@@ -280,16 +513,28 @@ export function computeCivilSocialStatus(clients) {
     bump(social, ss && ss.toLowerCase() !== 'none' ? ss : 'Inconnu');
   }
 
-  const toList = (o) => o.order.map((k) => ({
-    label: k,
-    count: o.counts.get(k),
-    pct: pyRound(o.counts.get(k) / total * 100, 1),
-  }));
+  const knownCount = (o) =>
+    [...o.counts.entries()]
+      .filter(([k]) => !/^inconnu$/i.test(k))
+      .reduce((a, [, v]) => a + v, 0);
+
+  const knownCivil = knownCount(civil);
+  const knownSocial = knownCount(social);
+
+  // Percent of known (matches ref rapport). "Inconnu" uses total as denominator.
+  const toList = (o, known) => o.order.map((k) => {
+    const count = o.counts.get(k);
+    const isUnknown = /^inconnu$/i.test(k);
+    const denom = isUnknown ? total : (known || 1);
+    return { label: k, count, pct: pyRound(count / denom * 100, 1) };
+  });
 
   return {
-    civil_status: sortByCountDesc(toList(civil)),
-    social_status: sortByCountDesc(toList(social)),
+    civil_status: sortByCountDesc(toList(civil, knownCivil)),
+    social_status: sortByCountDesc(toList(social, knownSocial)),
     total,
+    known_civil: knownCivil,
+    known_social: knownSocial,
   };
 }
 
@@ -297,30 +542,52 @@ export function computeCivilSocialStatus(clients) {
 // Section 5: Data Quality
 // ---------------------------------------------------------------------------
 
-export function computeDataQuality(clients) {
-  const total = clients.length;
-  if (total === 0) return { fields: [], total: 0 };
+export function computeDataQuality(particuliers, allActives) {
+  // Two scopes per the ref rapport:
+  //   Particuliers only:   Sexe, Âge, Statut social, État civil
+  //   Particuliers + Ent.: Téléphone, E-mail
+  // `allActives` falls back to `particuliers` when callers don't supply a
+  // separate list (tests, legacy parity harness).
+  const pList = particuliers || [];
+  const pTotal = pList.length;
+  const aList = allActives || pList;
+  const aTotal = aList.length;
+  if (pTotal === 0 && aTotal === 0) return { fields: [], total: 0, total_p: 0, total_all: 0 };
 
   const fieldsToCheck = [
-    ['sexe', 'Sexe'],
-    ['date_naissance', 'Âge'],
-    ['statut_social', 'Statut social'],
-    ['etat_civil', 'État civil'],
-    ['telephone', 'Téléphone'],
-    ['email', 'E-mail'],
+    { key: 'sexe',            label: 'Sexe (P)',                  scope: 'p'   },
+    { key: 'date_naissance',  label: 'Âge (P)',                    scope: 'p'   },
+    { key: 'statut_social',   label: 'Statut social (P)',          scope: 'p'   },
+    { key: 'etat_civil',      label: 'État Civil (P)',             scope: 'p'   },
+    { key: 'telephone',       label: 'Téléphone (P et E)',         scope: 'all' },
+    { key: 'email',           label: 'E-mail (P et E)',            scope: 'all' },
   ];
 
-  const fields = [];
-  for (const [key, label] of fieldsToCheck) {
+  // "Known" means a non-empty, non-sentinel value. Broker exports sometimes
+  // store the literal string "Inconnu" in etat_civil/statut_social/sexe —
+  // treat those as unknown so data-quality % matches the civil/social tables.
+  const UNKNOWN_SENTINELS = new Set(['', 'none', 'inconnu', 'onbekend', 'unknown', 'n/a', 'na']);
+  const countKnown = (list, key) => {
     let known = 0;
-    for (const c of clients) {
+    for (const c of list) {
       const val = c[key];
-      if (val != null && !['', 'None', 'none'].includes(String(val).trim())) known += 1;
+      if (val == null) continue;
+      const s = String(val).trim().toLowerCase();
+      if (!UNKNOWN_SENTINELS.has(s)) known += 1;
     }
+    return known;
+  };
+
+  const fields = [];
+  for (const { key, label, scope } of fieldsToCheck) {
+    const list = scope === 'p' ? pList : aList;
+    const total = list.length;
+    const known = countKnown(list, key);
     const missing = total - known;
     fields.push({
       key,
       label,
+      scope,
       known,
       missing,
       pct_missing: total ? pyRound(missing / total * 100, 1) : 0,
@@ -328,7 +595,8 @@ export function computeDataQuality(clients) {
     });
   }
 
-  return { fields, total };
+  // `total` kept for back-compat. For P-only display, treat as P count.
+  return { fields, total: pTotal, total_p: pTotal, total_all: aTotal };
 }
 
 // ---------------------------------------------------------------------------
@@ -474,6 +742,53 @@ export function computePoliciesPerClient(clients, polices, branchIndex) {
 // Section 9: Company Penetration
 // ---------------------------------------------------------------------------
 
+// Canonicalize broker-export compagnie names so variants collapse into a single
+// display bucket (matches the reference "Pénétration des compagnies" table).
+// Each key matches a case-insensitive regex; first match wins. Unmatched names
+// pass through unchanged (uppercased) so new compagnies still show up.
+const COMPAGNIE_ALIASES = [
+  [/^axa\s+(belgium|ass?urance)/i,         'AXA'],
+  [/^axa\s+assist/i,                        'AXA ASSISTANCE'],
+  [/^allianz\s+assist/i,                    'ALLIANZ ASSISTANCE'],
+  [/^allianz/i,                             'ALLIANZ'],
+  [/^(aedes|x\s+aedes|arces)/i,             'AEDES'],
+  [/^ag\s+insurance/i,                      'AG'],
+  [/^baloise/i,                              'BALOISE'],
+  [/^das\b/i,                                'DAS'],
+  [/^foyer/i,                                'FOYER'],
+  [/^europ\s+ass/i,                          'EUROP ASSISTANCE'],
+  [/^dkv/i,                                  'DKV'],
+  [/^vivium/i,                               'VIVIUM'],
+  [/^cardif/i,                               'CARDIF'],
+  [/^generali/i,                             'GENERALI'],
+  [/^dela/i,                                 'DELA'],
+  [/^ibis/i,                                 'IBIS'],
+  [/^arag/i,                                 'ARAG'],
+  [/^delta\s+lloyd/i,                        'DELTA LLOYD'],
+  [/^(jean\s+)?verheyen/i,                   'VERHEYEN'],
+  [/^vander\s+haeghen/i,                     'VANDER HAEGHEN'],
+  [/^(catherine\s+)?de\s+buyl/i,             'DE BUYL'],
+  [/^bdm\b/i,                                'BDM'],
+  [/^euromaf/i,                              'EUROMAF'],
+  [/^euromex/i,                              'EUROMEX'],
+  [/^ancoras/i,                              'ANCORAS'],
+  [/^belfius/i,                              'BELFIUS'],
+  [/^cbc/i,                                  'CBC'],
+  [/^lar\b/i,                                'LAR'],
+  [/^securex/i,                              'SECUREX'],
+  [/^anglo[-\s]?belge/i,                     'ANGLO-BELGE'],
+  [/^bureau\s+de\s+tarif/i,                  'BDT'],
+];
+
+function canonicalizeCompagnie(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s || s.toLowerCase() === 'none') return null;
+  for (const [re, alias] of COMPAGNIE_ALIASES) {
+    if (re.test(s)) return alias;
+  }
+  return s.toUpperCase();
+}
+
 export function computeCompanyPenetration(polices) {
   const total = polices.length;
   if (total === 0) return { companies: [], total: 0 };
@@ -481,11 +796,10 @@ export function computeCompanyPenetration(polices) {
   const order = [];
   const counts = new Map();
   for (const p of polices) {
-    const comp = String(p.compagnie ?? '').trim();
-    if (comp && comp.toLowerCase() !== 'none') {
-      if (!counts.has(comp)) { counts.set(comp, 0); order.push(comp); }
-      counts.set(comp, counts.get(comp) + 1);
-    }
+    const comp = canonicalizeCompagnie(p.compagnie);
+    if (!comp) continue;
+    if (!counts.has(comp)) { counts.set(comp, 0); order.push(comp); }
+    counts.set(comp, counts.get(comp) + 1);
   }
   const companies = sortByCountDesc(
     order.map((k) => ({
@@ -501,7 +815,7 @@ export function computeCompanyPenetration(polices) {
 // Section 10: KPI Summary
 // ---------------------------------------------------------------------------
 
-export function computeKpiSummary(clients, polices, compagniePolices, sinistres, snapshotYear) {
+export function computeKpiSummary(clients, polices, compagniePolices, sinistres, snapshotYear, entrepriseKeys) {
   const total_clients = clients.length;
   const total_polices = polices.length;
 
@@ -515,6 +829,25 @@ export function computeKpiSummary(clients, polices, compagniePolices, sinistres,
 
   const avg_polices_per_client = active_clients
     ? pyRound(total_polices / active_clients, 2) : 0;
+
+  // P/E policy split (ref rapport shows "Polices Particuliers" / "Polices Entreprises").
+  const eKeys = entrepriseKeys || computeEntrepriseKeys(clients, polices);
+  let polices_entreprises = 0;
+  for (const p of polices) if (p.dossier_key && eKeys.has(p.dossier_key)) polices_entreprises += 1;
+  const polices_particuliers = total_polices - polices_entreprises;
+
+  // Average policies per client split by P/E.
+  const activeP_keys = new Set();
+  const activeE_keys = new Set();
+  for (const c of clients) {
+    if (!clientKeysWithPolices.has(c.dossier_key)) continue;
+    if (eKeys.has(c.dossier_key)) activeE_keys.add(c.dossier_key);
+    else activeP_keys.add(c.dossier_key);
+  }
+  const avg_polices_per_client_p = activeP_keys.size
+    ? pyRound(polices_particuliers / activeP_keys.size, 2) : 0;
+  const avg_polices_per_client_e = activeE_keys.size
+    ? pyRound(polices_entreprises / activeE_keys.size, 2) : 0;
 
   let total_premium = 0;
   let total_commission = 0;
@@ -530,22 +863,66 @@ export function computeKpiSummary(clients, polices, compagniePolices, sinistres,
   let mono_policy_clients = 0;
   for (const [, count] of policesPerClient) if (count === 1) mono_policy_clients += 1;
 
+  // Sinistre count: ref rapport reports "Nombre de sinistres <year>" for the
+  // most recent full year before the snapshot, and freq = that count / total
+  // policies. For a Dec 2019 snapshot this is 2018 sinistres.
+  const sinistreYear = (snapshotYear && Number.isFinite(snapshotYear))
+    ? snapshotYear - 1 : null;
+  let sinistresOfYear = 0;
   const sinistreKeys = new Set();
-  for (const s of sinistres) if (s.dossier_key) sinistreKeys.add(s.dossier_key);
+  const sinistreKeysOfYear = new Set();
+  for (const s of sinistres) {
+    if (s.dossier_key) sinistreKeys.add(s.dossier_key);
+    const y = yearOf(s.date_evenement ?? s['date_événement'] ?? s.date);
+    if (sinistreYear != null && y === sinistreYear) {
+      sinistresOfYear += 1;
+      if (s.dossier_key) sinistreKeysOfYear.add(s.dossier_key);
+    }
+  }
+
+  // Households: distinct addresses among active clients.
+  const activeSet = clientKeysWithPolices;
+  const householdAddrs = new Map(); // addrKey -> Set<dossier_key>
+  const clientToAddr = new Map();
+  for (const c of clients) {
+    if (!activeSet.has(c.dossier_key)) continue;
+    const cp = String(c.code_postal ?? '').trim();
+    const rue = normalizeAddress(c.rue);
+    const addrKey = cp && rue ? `${cp}|${rue}` : `__nokey__:${c.dossier_key}`;
+    clientToAddr.set(c.dossier_key, addrKey);
+    if (!householdAddrs.has(addrKey)) householdAddrs.set(addrKey, new Set());
+    householdAddrs.get(addrKey).add(c.dossier_key);
+  }
+  const total_menages = householdAddrs.size;
+  // Mono-police household: all its members combined hold exactly 1 policy.
+  let menages_mono_police = 0;
+  for (const [, members] of householdAddrs) {
+    let policyCount = 0;
+    for (const dk of members) policyCount += (policesPerClient.get(dk) || 0);
+    if (policyCount === 1) menages_mono_police += 1;
+  }
 
   return {
     total_clients,
     active_clients,
     clients_sans_police: total_clients - active_clients,
     total_polices,
+    polices_particuliers,
+    polices_entreprises,
     avg_polices_per_client,
+    avg_polices_per_client_p,
+    avg_polices_per_client_e,
     mono_policy_clients,
     total_premium: pyRound(total_premium, 2),
     total_commission: pyRound(total_commission, 2),
     avg_premium_per_client,
     avg_commission_per_client,
-    total_sinistres: sinistres.length,
-    clients_with_sinistres: sinistreKeys.size,
+    total_sinistres: sinistresOfYear || sinistres.length,
+    total_sinistres_all: sinistres.length,
+    sinistre_year: sinistreYear,
+    clients_with_sinistres: (sinistreKeysOfYear.size || sinistreKeys.size),
+    total_menages,
+    menages_mono_police,
     snapshot_year: snapshotYear,
   };
 }
@@ -627,7 +1004,7 @@ export function computeOpportunities(clients, polices, compagniePolices, snapsho
   // 3. Succession: clients 60+ without Vie or Placement
   const succession = [];
   for (const c of clients) {
-    const year = yearOf(c.date_naissance);
+    const year = yearOf(getDateNaissance(c));
     if (year == null) continue;
     const age = snapshotYear - year;
     if (age >= 60) {
@@ -649,7 +1026,7 @@ export function computeOpportunities(clients, polices, compagniePolices, snapsho
   // 4. Young families: 25-45 with IARD but no Vie
   const young_families = [];
   for (const c of clients) {
-    const year = yearOf(c.date_naissance);
+    const year = yearOf(getDateNaissance(c));
     if (year == null) continue;
     const age = snapshotYear - year;
     if (age >= 25 && age <= 45) {
@@ -709,6 +1086,12 @@ export function computeOpportunities(clients, polices, compagniePolices, snapsho
 export function computeClientTotal(clients, polices, compagniePolices, snapshotYear, branchIndex) {
   if (clients.length === 0) return [];
 
+  // Drop utility/reinsurer clients (dossiers 9990+) and their attached rows.
+  ({ clients, polices, compagniePolices } = excludeUtility(clients, polices, compagniePolices, []));
+
+  // Full P/E classification (pm=morale | ss=TI | has prof-only policy type).
+  const entrepriseKeys = computeEntrepriseKeys(clients, polices);
+
   const policesByDk = new Map();
   for (const p of polices) {
     if (!p.dossier_key) continue;
@@ -756,13 +1139,15 @@ export function computeClientTotal(clients, polices, compagniePolices, snapshotY
       nclient = dNum * 100 + sNum;
     }
 
-    // Age
-    const year = yearOf(c.date_naissance);
+    // Age / date of birth (formatted DD/MM/YYYY for xlsx output)
+    const dnRaw = getDateNaissance(c);
+    const year = yearOf(dnRaw);
     const age = year != null ? snapshotYear - year : null;
+    const date_naissance = formatDateFR(dnRaw);
+    const sexe = formatSexe(c.sexe);
 
-    // Type PE
-    const pm = String(c.physique_morale ?? '').trim().toLowerCase();
-    const type_pe = (pm === 'p' || pm === 'physique' || pm === 'personne physique' || pm === '') ? 'P' : 'E';
+    // Type PE (full rule: pm=morale | ss=TI | has prof-only policy type).
+    const type_pe = entrepriseKeys.has(dk) ? 'E' : 'P';
 
     // #POL
     const clientPolices = policesByDk.get(dk) || [];
@@ -813,8 +1198,9 @@ export function computeClientTotal(clients, polices, compagniePolices, snapshotY
       pays: c.pays ?? '',
       code_postal: c.code_postal ?? '',
       localite: c.localite ?? '',
-      age,
       langue: c.langue ?? '',
+      date_naissance,
+      age,
       telephone: c.telephone ?? '',
       description_telephone: c.description_telephone ?? '',
       fax: c.fax ?? '',
@@ -822,10 +1208,13 @@ export function computeClientTotal(clients, polices, compagniePolices, snapshotY
       profession: c.profession ?? '',
       physique_morale: c.physique_morale ?? '',
       etat_civil: c.etat_civil ?? '',
+      sexe,
       type_pe,
       n_pol,
       pol_adres,
-      com_iard: com_iard ? pyRound(com_iard, 2) : null,
+      // Preserve 0 (client has Compagnie rows but all are Vie et placements)
+      // vs null (no Compagnie rows) — the reference xlsx writes 0 through.
+      com_iard: com_iard == null ? null : pyRound(com_iard, 2),
     };
     for (const code of codes) row[code] = branchFlags[code];
     result.push(row);
@@ -839,17 +1228,28 @@ export function computeClientTotal(clients, polices, compagniePolices, snapshotY
 // ---------------------------------------------------------------------------
 
 export function computeAllStats(clients, polices, compagniePolices, sinistres, snapshotYear, branchIndex) {
+  // Drop utility/reinsurer clients (dossiers 9990+) across every section.
+  ({ clients, polices, compagniePolices, sinistres } =
+    excludeUtility(clients, polices, compagniePolices, sinistres));
+
+  const entrepriseKeys = computeEntrepriseKeys(clients, polices);
+
   const activeKeys = new Set();
   for (const p of polices) if (p.dossier_key) activeKeys.add(p.dossier_key);
   const activeClients = clients.filter((c) => activeKeys.has(c.dossier_key));
 
+  // Sections 3 (demographics) and 4 (civil/social) are "Clients Particuliers"
+  // only in the reference rapport. Section 5 (data quality) splits its fields:
+  //   P only for Sexe/Âge/Statut social/État civil, P+E for Téléphone/E-mail.
+  const activeParticuliers = activeClients.filter((c) => isParticulier(c, entrepriseKeys));
+
   return {
-    overview: computeClientOverview(clients, polices),
-    kpi_summary: computeKpiSummary(clients, polices, compagniePolices, sinistres, snapshotYear),
+    overview: computeClientOverview(clients, polices, entrepriseKeys),
+    kpi_summary: computeKpiSummary(clients, polices, compagniePolices, sinistres, snapshotYear, entrepriseKeys),
     geographic: computeGeographicProfile(activeClients),
-    demographics: computeDemographics(activeClients, polices, snapshotYear),
-    civil_social: computeCivilSocialStatus(activeClients),
-    data_quality: computeDataQuality(activeClients),
+    demographics: computeDemographics(activeParticuliers, polices, snapshotYear),
+    civil_social: computeCivilSocialStatus(activeParticuliers),
+    data_quality: computeDataQuality(activeParticuliers, activeClients),
     branches: computeBranches(polices, branchIndex),
     subscription: computeSubscriptionIndex(activeClients, polices, branchIndex),
     policies_per_client: computePoliciesPerClient(activeClients, polices, branchIndex),

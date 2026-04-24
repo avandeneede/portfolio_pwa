@@ -49,7 +49,23 @@ function coerceCell(key, value) {
   if (DATE_FIELDS.has(key)) return parseDate(value);
   if (NUMERIC_FIELDS.has(key)) {
     if (typeof value === 'number') return value;
-    const n = Number(String(value).replace(/\s/g, '').replace(',', '.'));
+    // Broker exports write amounts like "1 234,56 €" / "1.234,56" / "(1,50)".
+    // Strip currency symbols, spaces (incl. non-breaking & narrow no-break),
+    // then convert European comma decimal to a dot.
+    let s = String(value)
+      .replace(/[\u00A0\u202F\s]/g, '')
+      .replace(/[€$£¥]/g, '');
+    // Negative in parentheses: "(1,50)" → "-1,50"
+    const paren = /^\((.+)\)$/.exec(s);
+    if (paren) s = '-' + paren[1];
+    // If both separators present, "." is the thousands separator (fr/nl convention):
+    // "1.234,56" → "1234.56". Otherwise treat the lone comma as decimal point.
+    if (s.indexOf(',') >= 0 && s.indexOf('.') >= 0) {
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else {
+      s = s.replace(',', '.');
+    }
+    const n = Number(s);
     return Number.isFinite(n) ? n : null;
   }
   return typeof value === 'string' ? value.trim() : value;

@@ -17,7 +17,9 @@ export function addRoute(pattern, handler) {
 }
 
 function patternToRegex(pattern) {
-  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\:(\w+)/g, '(?<$1>[^/]+)');
+  // Escape regex metacharacters, then turn :name segments into named captures.
+  // Note: ':' is not in the escape list above, so we match it raw here.
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:(\w+)/g, '(?<$1>[^/]+)');
   return new RegExp(`^${escaped}$`);
 }
 

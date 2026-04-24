@@ -1,102 +1,256 @@
-// Upload screen: pick snapshot date + files, parse in browser, route to preview.
+// Upload screen: pick snapshot date + files, parse in browser, commit directly.
+//
+// The old two-step flow (upload -> preview) has been folded into a single
+// screen. Four named slots (CLIENTS / POLICES / COMPAGNIES / SINISTRES) show
+// live as files are recognized. A file can be replaced by re-selecting it.
 
 import { h, mount } from '../ui/dom.js';
 import { t } from '../i18n/index.js';
 import { toast } from '../ui/toast.js';
+import { formatInt, formatMonthYear, formatDateEU, parseDateEU } from '../ui/format.js';
 import { parseFile } from '../ingest/parser.js';
+import { icon, iconTile } from '../ui/icon.js';
 
-function monthLabelFr(d) {
-  const months = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-                  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
-  return `${months[d.getMonth()]} ${d.getFullYear()}`;
-}
+const SLOTS = [
+  { type: 'clients',    iconName: 'person.2',    tint: '--indigo',  table: 'clients'            },
+  { type: 'polices',    iconName: 'doc.text',    tint: '--purple',  table: 'polices'            },
+  { type: 'compagnies', iconName: 'building.2',  tint: '--teal',    table: 'compagnies_polices' },
+  { type: 'sinistres',  iconName: 'shield.checkmark', tint: '--warning', table: 'sinistres'     },
+];
 
 export function renderUpload(root, ctx) {
   const today = new Date().toISOString().slice(0, 10);
-  const state = { date: today, files: [], busy: false };
 
+  // state.slots: map type -> { parsed, file } once a file has been assigned.
+  // state.unrecognized: list of parsed results whose type couldn't be detected.
+  const state = {
+    date: today,
+    slots: Object.fromEntries(SLOTS.map((s) => [s.type, null])),
+    unrecognized: [],
+    busy: false,
+  };
+
+  // EU date input: a plain text field formatted as JJ/MM/AAAA so brokers
+  // don't get the US mm/dd/yyyy the native date picker gives on English OS.
+  // Behind it, a real `type="date"` input is still available via the
+  // calendar button for users who prefer the OS picker. Canonical storage
+  // stays ISO in state.date.
   const dateInput = h('input', {
-    type: 'date',
-    value: state.date,
-    onChange: (e) => { state.date = e.target.value; },
+    type: 'text',
+    class: 'date-eu',
+    value: formatDateEU(state.date),
+    placeholder: 'JJ/MM/AAAA',
+    inputMode: 'numeric',
+    autocomplete: 'off',
+    'aria-label': t('upload.date'),
+    onBlur: (e) => {
+      const parsed = parseDateEU(e.target.value);
+      if (parsed) {
+        state.date = parsed;
+        e.target.value = formatDateEU(parsed);
+      } else {
+        // Revert to last valid value so state never drifts.
+        e.target.value = formatDateEU(state.date);
+      }
+    },
+    onKeyDown: (e) => {
+      if (e.key === 'Enter') e.currentTarget.blur();
+    },
   });
+  const nativeDateInput = h('input', {
+    type: 'date',
+    class: 'date-eu-native',
+    value: state.date,
+    'aria-hidden': 'true',
+    tabIndex: -1,
+    onChange: (e) => {
+      const iso = e.target.value;
+      if (!iso) return;
+      state.date = iso;
+      dateInput.value = formatDateEU(iso);
+    },
+  });
+  const dateCalendarBtn = h('button', {
+    type: 'button',
+    class: 'date-eu-btn',
+    'aria-label': t('upload.date'),
+    onClick: () => {
+      // Modern browsers: open the native picker programmatically.
+      if (typeof nativeDateInput.showPicker === 'function') {
+        try { nativeDateInput.showPicker(); return; } catch (_) { /* fall through */ }
+      }
+      nativeDateInput.focus();
+      nativeDateInput.click();
+    },
+  }, icon('calendar', { size: 18, color: '--muted' }));
+  const dateField = h('div', { class: 'date-eu-field' }, [
+    dateInput,
+    dateCalendarBtn,
+    nativeDateInput,
+  ]);
 
+  // Hidden native picker; triggered from the "Choose files" button and from
+  // individual "Replace" buttons on each slot.
   const fileInput = h('input', {
     type: 'file',
     multiple: true,
     accept: '.xlsx,.xls',
-    onChange: (e) => { state.files = [...e.target.files]; renderFileList(); updateCta(); },
+    style: { display: 'none' },
+    onChange: async (e) => {
+      const files = [...e.target.files];
+      e.target.value = '';  // allow picking the same file twice
+      if (files.length === 0) return;
+      await handleFiles(files);
+    },
   });
 
-  const fileList = h('div', { class: 'form-hint' });
-  function renderFileList() {
-    mount(fileList, state.files.length === 0
-      ? t('upload.files.hint')
-      : state.files.map((f) => h('div', {}, `• ${f.name} (${Math.round(f.size / 1024)} KB)`)));
-  }
-  renderFileList();
-
-  const cta = h('button', {
-    class: 'btn',
-    onClick: handleSubmit,
-  }, t('upload.cta'));
-  function updateCta() {
-    cta.disabled = state.busy || state.files.length === 0;
-    cta.textContent = state.busy ? t('common.loading') : t('upload.cta');
-  }
-  updateCta();
-
-  async function handleSubmit() {
-    if (state.files.length === 0) {
-      toast(t('upload.error.no_files'), 'danger');
-      return;
-    }
-    state.busy = true; updateCta();
+  async function handleFiles(files) {
+    state.busy = true; render();
     try {
       const XLSX = await ctx.loadXLSX();
-      const parsed = [];
-      for (const f of state.files) {
-        const buf = await f.arrayBuffer();
-        const result = await parseFile(XLSX, buf, f.name);
-        parsed.push(result);
+      for (const f of files) {
+        try {
+          const buf = await f.arrayBuffer();
+          const parsed = await parseFile(XLSX, buf, f.name);
+          if (parsed.type && state.slots[parsed.type] !== undefined) {
+            state.slots[parsed.type] = { parsed, filename: f.name };
+          } else {
+            state.unrecognized.push({ parsed, filename: f.name });
+          }
+        } catch (err) {
+          console.error(err);
+          toast(`${f.name}: ${err.message}`, 'danger');
+        }
       }
-      const hasClients = parsed.some((p) => p.type === 'clients');
-      if (!hasClients) {
-        toast(t('upload.error.clients_required'), 'danger');
-        state.busy = false; updateCta();
-        return;
-      }
-      const snapshotDate = new Date(state.date);
-      ctx.pendingUpload = {
-        snapshotDate: state.date,
-        label: monthLabelFr(snapshotDate),
-        parsed,
-      };
-      ctx.navigate('/preview');
-    } catch (e) {
-      console.error(e);
-      toast(t('error.parse') + ' ' + e.message, 'danger');
-      state.busy = false; updateCta();
+    } finally {
+      state.busy = false; render();
     }
   }
 
-  mount(root, h('div', { class: 'wrap' }, [
-    h('div', { class: 'nav' }, [
-      h('button', { class: 'back', onClick: () => ctx.navigate('/') }, '‹ ' + t('nav.back')),
-      h('div', { class: 'title' }, t('upload.title')),
-      h('div', { style: { width: '60px' } }),
-    ]),
-    h('div', { class: 'form-group' }, [
-      h('div', { class: 'form-row' }, [
-        h('label', {}, t('upload.date')),
-        dateInput,
+  async function handleCommit() {
+    const clientsSlot = state.slots.clients;
+    if (!clientsSlot) {
+      toast(t('upload.error.clients_required'), 'danger');
+      return;
+    }
+    state.busy = true; render();
+    try {
+      const snapshotDate = state.date;
+      const label = formatMonthYear(snapshotDate);
+      const snapshotId = ctx.db.createSnapshot({ snapshot_date: snapshotDate, label });
+      for (const s of SLOTS) {
+        const slot = state.slots[s.type];
+        if (!slot) continue;
+        ctx.db.insertRows(s.table, snapshotId, slot.parsed.rows);
+      }
+      await ctx.persistDb();
+      toast(t('preview.confirm'), 'success');
+      ctx.navigate(`/snapshot/${snapshotId}`);
+    } catch (e) {
+      console.error(e);
+      toast(t('error.generic') + ' ' + e.message, 'danger');
+      state.busy = false; render();
+    }
+  }
+
+  function slotCard(slotDef) {
+    const slot = state.slots[slotDef.type];
+    const filled = !!slot;
+    return h('div', {
+      class: 'upload-slot' + (filled ? ' filled' : ''),
+      onClick: () => fileInput.click(),
+      role: 'button',
+      tabIndex: 0,
+    }, [
+      h('div', { class: 'upload-slot-icon' },
+        iconTile(slotDef.iconName, slotDef.tint, { size: 44, iconSize: 22 })),
+      h('div', { class: 'upload-slot-main' }, [
+        h('div', { class: 'upload-slot-title' }, t('upload.slot.' + slotDef.type)),
+        filled
+          ? h('div', { class: 'upload-slot-meta' }, [
+              h('span', { class: 'upload-slot-filename' }, slot.filename),
+              h('span', { class: 'upload-slot-rows' },
+                `${formatInt(slot.parsed.row_count)} ${t('upload.slot.rows')}`),
+            ])
+          : h('div', { class: 'upload-slot-waiting' }, t('upload.slot.waiting')),
       ]),
-      h('div', { class: 'form-row' }, [
-        h('label', {}, t('upload.files')),
+      h('div', { class: 'upload-slot-status' },
+        filled
+          ? icon('checkmark.circle', { size: 20, color: '--success' })
+          : icon('tray.and.arrow.up', { size: 20, color: '--muted' })),
+    ]);
+  }
+
+  function unrecognizedRow(u) {
+    return h('div', { class: 'upload-unrecognized' }, [
+      iconTile('questionmark.circle', '--warning', { size: 36, iconSize: 18 }),
+      h('div', { class: 'upload-slot-main' }, [
+        h('div', { class: 'upload-slot-title' }, u.filename),
+        h('div', { class: 'upload-slot-waiting' }, t('upload.slot.unrecognized')),
+      ]),
+    ]);
+  }
+
+  // Re-renders the content area; cheap because there are only a handful of nodes.
+  function render() {
+    const readyCount = SLOTS.filter((s) => state.slots[s.type]).length;
+    const canCommit = !!state.slots.clients && !state.busy;
+
+    mount(root, h('div', { class: 'page' }, [
+      h('div', { class: 'page-head' }, [
+        h('div', { class: 'page-head-main' }, [
+          h('button', {
+            class: 'back-link',
+            onClick: () => ctx.navigate('/'),
+            type: 'button',
+          }, [
+            icon('chevron.left', { size: 16 }),
+            h('span', {}, t('nav.back')),
+          ]),
+          h('h1', { class: 'page-title' }, t('upload.title')),
+        ]),
+      ]),
+
+      h('div', { class: 'form-group' }, [
+        h('div', { class: 'form-row' }, [
+          h('label', {}, t('upload.date')),
+          dateField,
+        ]),
+      ]),
+
+      // Primary CTA up top: the whole point of this screen is picking files,
+      // so this is the first obvious thing to click. Slots below just show
+      // what landed in which bucket.
+      h('div', { class: 'upload-cta' }, [
+        h('button', {
+          class: 'btn primary upload-cta-btn',
+          type: 'button',
+          onClick: () => fileInput.click(),
+          disabled: state.busy,
+        }, [
+          icon('tray.and.arrow.up', { size: 18, color: '#fff' }),
+          h('span', {}, readyCount > 0 ? t('upload.replace_file') : t('upload.pick_files')),
+        ]),
+        h('p', { class: 'upload-cta-hint' }, t('upload.files.hint')),
+      ]),
+
+      h('div', { class: 'upload-slots' }, SLOTS.map(slotCard)),
+
+      state.unrecognized.length > 0
+        ? h('div', { class: 'upload-unrec-list' }, state.unrecognized.map(unrecognizedRow))
+        : null,
+
+      h('div', { class: 'form-actions' }, [
+        h('button', {
+          class: 'btn primary',
+          type: 'button',
+          onClick: handleCommit,
+          disabled: !canCommit,
+        }, state.busy ? t('common.loading') : t('preview.confirm')),
         fileInput,
       ]),
-    ]),
-    fileList,
-    h('div', { style: { marginTop: '24px' } }, cta),
-  ]));
+    ]));
+  }
+
+  render();
 }

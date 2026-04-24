@@ -156,6 +156,19 @@ export class Database {
     this.raw.run('DELETE FROM snapshots WHERE id = ?', [id]);
   }
 
+  updateSnapshot(id, { snapshot_date, label }) {
+    // Only updates the fields actually provided. The label is persisted too
+    // so legacy export paths keep working; the shell re-derives it from the
+    // date at render time for locale-aware display.
+    const sets = [];
+    const vals = [];
+    if (snapshot_date != null) { sets.push('snapshot_date = ?'); vals.push(snapshot_date); }
+    if (label != null) { sets.push('label = ?'); vals.push(label); }
+    if (sets.length === 0) return;
+    vals.push(id);
+    this.raw.run(`UPDATE snapshots SET ${sets.join(', ')} WHERE id = ?`, vals);
+  }
+
   insertRows(table, snapshotId, rows) {
     const meta = TABLE_META[table];
     if (!meta) throw new Error(`Unknown table: ${table}`);
