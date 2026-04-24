@@ -1,14 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#007aff"/>
-  <g transform="translate(96 112)" fill="#fff">
-    <rect x="0" y="64" width="320" height="224" rx="24" fill="#fff" opacity="0.15"/>
-    <rect x="0" y="32" width="320" height="224" rx="24" fill="#fff"/>
-    <rect x="32" y="72" width="96" height="16" rx="8" fill="#007aff"/>
-    <rect x="32" y="104" width="256" height="8" rx="4" fill="#8e8e93" opacity="0.4"/>
-    <rect x="32" y="124" width="192" height="8" rx="4" fill="#8e8e93" opacity="0.4"/>
-    <rect x="32" y="160" width="48" height="72" rx="6" fill="#007aff"/>
-    <rect x="96" y="136" width="48" height="96" rx="6" fill="#34c759"/>
-    <rect x="160" y="176" width="48" height="56" rx="6" fill="#ff9500"/>
-    <rect x="224" y="152" width="48" height="80" rx="6" fill="#5856d6"/>
+  <!-- Minimalist portfolio mark: a single donut ring, with one arc segment
+       highlighted to evoke a portfolio breakdown. Deep-navy tile keeps it
+       calm on a crowded home screen. -->
+  <rect width="512" height="512" rx="112" fill="#0b1020"/>
+  <g transform="translate(256 256)">
+    <!-- Full ring -->
+    <circle r="128" fill="none" stroke="#ffffff" stroke-width="44"/>
+    <!-- Accent arc (~35% of the circumference), starting at the top.
+         Circumference = 2π·128 ≈ 804.25; arc = 282, gap = 523. -->
+    <circle r="128" fill="none" stroke="#5ac8fa" stroke-width="44"
+            stroke-dasharray="282 523" stroke-linecap="butt"
+            transform="rotate(-90)"/>
   </g>
 </svg>
