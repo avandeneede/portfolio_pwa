@@ -240,16 +240,18 @@ button { font-family: inherit; }
     z-index: 50;
     background: var(--bg-elevated);
     border-right: 0.5px solid var(--separator);
-    box-shadow: 8px 0 28px rgba(0, 0, 0, 0.16);
     padding: max(env(safe-area-inset-top), 12px) 12px max(env(safe-area-inset-bottom), 18px);
     gap: 14px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     transform: translateX(-102%);
-    transition: transform .22s ease;
+    transition: transform .22s ease, box-shadow .22s ease;
     will-change: transform;
   }
-  .app.drawer-open .sidebar { transform: translateX(0); }
+  .app.drawer-open .sidebar {
+    transform: translateX(0);
+    box-shadow: 8px 0 28px rgba(0, 0, 0, 0.16);
+  }
 
   .drawer-backdrop {
     display: block;
@@ -735,15 +737,6 @@ button { font-family: inherit; }
   flex: 1;
 }
 
-@media (max-width: 820px) {
-  .sidebar { flex-direction: column; align-items: stretch; }
-  .side-cta { padding: 8px 12px; }
-  .side-section-head { display: none; }
-  .side-list { flex-direction: row; overflow-x: auto; flex-wrap: nowrap; }
-  .side-snapshot { white-space: nowrap; padding: 6px 10px; }
-  .side-empty { display: none; }
-}
-
 /* ------------------------------------------------------------------ *
  * Dashboard: hero, colored sections, cards, charts
  * ------------------------------------------------------------------ */
@@ -870,6 +863,22 @@ button { font-family: inherit; }
 .dash-card.card-chart {
   display: flex; flex-direction: column; align-items: stretch; gap: 12px;
 }
+
+/* Split layout inside a single card: tables on the left, chart on the right.
+ * Collapses to a vertical stack on narrow viewports. Used in section 1
+ * (Portfolio composition) to keep the table and the matching pie chart in
+ * the same card so they read as one unit. */
+.card-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+}
+.card-split-tables { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.card-split-chart { min-width: 0; }
+@media (max-width: 820px) {
+  .card-split { grid-template-columns: 1fr; gap: 16px; }
+}
 .card-h3 {
   margin: 0 0 10px;
   font-size: 13px; color: var(--muted);
@@ -952,6 +961,12 @@ button { font-family: inherit; }
 .dash-table td.a-right, .dash-table th.a-right { text-align: right; white-space: nowrap; }
 .dash-table td.a-center, .dash-table th.a-center { text-align: center; }
 .dash-table + .dash-table { margin-top: 14px; }
+
+/* Horizontal scroll container around each .dash-table. Only the table
+ * scrolls when it overflows, so card titles and surrounding UI stay
+ * anchored. On desktop the wrap is a no-op. */
+.table-wrap { min-width: 0; }
+.table-wrap + .table-wrap { margin-top: 14px; }
 
 /* Small info blurb shown under a card h3. Same tone as the printed report. */
 .card-info {
@@ -1855,19 +1870,16 @@ button { font-family: inherit; }
  * ------------------------------------------------------------------ */
 @media (max-width: 720px) {
   /* Tables inside dashboard cards can be wider than the viewport. Scroll at
-   * the card level (not the section) so each table gets its own horizontal
-   * scroller while keeping the card's rounded corners and padding intact.
-   * The inner table uses display:block + overflow-x:auto so the thead/tbody
-   * scroll together. */
-  .dash-card {
-    padding: 14px 14px;
+   * the .table-wrap level (not the card) so the card title, info popover,
+   * and any neighbouring content (e.g. pie chart in the same card) stay
+   * anchored while the user swipes the table horizontally. */
+  .dash-card { padding: 14px 14px; }
+  .table-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
   .dash-table { min-width: max-content; font-size: 13px; }
   .dash-table th, .dash-table td { padding: 6px 6px; }
-  /* Cards that hold charts should never scroll horizontally themselves. */
-  .dash-card.card-chart { overflow-x: visible; }
 
   /* Page header: subtitle under title, actions wrap below. */
   .page-head { gap: 8px; }

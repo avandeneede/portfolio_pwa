@@ -109,7 +109,10 @@ function socialIconTint(label) {
 }
 
 function simpleTable(columns, rows) {
-  return h('table', { class: 'dash-table' }, [
+  // Wrap the <table> in a .table-wrap so horizontal overflow scrolls the
+  // table itself (not the whole card). Keeps card headers/titles anchored
+  // on narrow viewports where the table is wider than the card.
+  return h('div', { class: 'table-wrap' }, h('table', { class: 'dash-table' }, [
     h('thead', {}, h('tr', {}, columns.map((c) =>
       h('th', { class: c.align ? `a-${c.align}` : null }, c.label)))),
     h('tbody', {}, rows.map((r) => {
@@ -133,7 +136,7 @@ function simpleTable(columns, rows) {
         }, val);
       }));
     })),
-  ]);
+  ]));
 }
 
 // Card head: title + info-icon popover (click/hover). The info text now lives
@@ -491,30 +494,30 @@ export function renderDashboard(root, ctx, args) {
     tint: '--indigo', iconName: 'person.2',
     description: t('dash.s1_desc'),
   }, [
-    h('div', { class: 'dash-grid dash-grid-2' }, [
-      card([
-        simpleTable(
-          [{ label: t('report.in_portfolio') },
-           { label: t('report.count'), align: 'right' },
-           { label: '%', align: 'right' }],
-          [
-            { key: 'seg:part', cells: [t('report.particuliers'), formatInt(ov.active_particuliers), formatPercent(ov.pct_active_particuliers, 1)] },
-            { key: 'seg:ent', cells: [t('report.entreprises'), formatInt(ov.active_entreprises), formatPercent(ov.pct_active_entreprises, 1)] },
-            { total: true, cells: [t('common.total'), formatInt(ov.active_clients), '100%'] },
-          ]
-        ),
-        simpleTable(
-          [{ label: t('report.sans_police') },
-           { label: t('report.count'), align: 'right' }],
-          [
-            { key: 'seg:part', cells: [t('report.particuliers'), formatInt(ov.sans_police_particuliers)] },
-            { key: 'seg:ent', cells: [t('report.entreprises'), formatInt(ov.sans_police_entreprises)] },
-            { total: true, cells: [t('common.total'), formatInt(ov.clients_sans_police)] },
-          ]
-        ),
-      ]),
-      card([
-        h('div', { class: 'chart-wrap' }, [
+    card([
+      h('div', { class: 'card-split' }, [
+        h('div', { class: 'card-split-tables' }, [
+          simpleTable(
+            [{ label: t('report.in_portfolio') },
+             { label: t('report.count'), align: 'right' },
+             { label: '%', align: 'right' }],
+            [
+              { key: 'seg:part', cells: [t('report.particuliers'), formatInt(ov.active_particuliers), formatPercent(ov.pct_active_particuliers, 1)] },
+              { key: 'seg:ent', cells: [t('report.entreprises'), formatInt(ov.active_entreprises), formatPercent(ov.pct_active_entreprises, 1)] },
+              { total: true, cells: [t('common.total'), formatInt(ov.active_clients), '100%'] },
+            ]
+          ),
+          simpleTable(
+            [{ label: t('report.sans_police') },
+             { label: t('report.count'), align: 'right' }],
+            [
+              { key: 'seg:part', cells: [t('report.particuliers'), formatInt(ov.sans_police_particuliers)] },
+              { key: 'seg:ent', cells: [t('report.entreprises'), formatInt(ov.sans_police_entreprises)] },
+              { total: true, cells: [t('common.total'), formatInt(ov.clients_sans_police)] },
+            ]
+          ),
+        ]),
+        h('div', { class: 'card-split-chart chart-wrap' }, [
           pieChart(segments, { size: 200, stroke: 40 }),
           h('div', { class: 'chart-legend' }, segments.map((sg) => h('div', { class: 'legend-item' }, [
             h('span', { class: 'legend-dot', style: { background: `var(${sg.color})` } }),
@@ -522,7 +525,7 @@ export function renderDashboard(root, ctx, args) {
             h('span', { class: 'legend-value' }, formatInt(sg.value)),
           ]))),
         ]),
-      ], { class: 'card-chart' }),
+      ]),
     ]),
   ]);
 
