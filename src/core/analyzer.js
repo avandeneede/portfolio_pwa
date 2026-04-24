@@ -213,6 +213,46 @@ function excludeUtility(clients, polices, compagniePolices, sinistres) {
   };
 }
 
+// The 02/2022 COMPAGNIE export contains ~7k rows whose (dossier_key, police)
+// pair is not in the POLICE export — historical / terminated policies the
+// broker left in the accounting extract. Other snapshots (2019, 2021, 2025)
+// are already trimmed. Restrict compagnie rows to the active policy set so
+// total_premium and per-client premium only reflect the current portfolio.
+function restrictToActivePolices(polices, compagniePolices) {
+  if (!compagniePolices || compagniePolices.length === 0) return compagniePolices || [];
+  const activeKeys = new Set();
+  for (const p of polices || []) {
+    if (p && p.dossier_key && p.police != null) {
+      activeKeys.add(`${p.dossier_key}|${String(p.police)}`);
+    }
+  }
+  if (activeKeys.size === 0) return compagniePolices;
+  return compagniePolices.filter((cp) => (
+    cp && cp.dossier_key && cp.police != null &&
+    activeKeys.has(`${cp.dossier_key}|${String(cp.police)}`)
+  ));
+}
+
+// Periodicities that do NOT represent an annual recurring premium:
+//   - "Libre" / "Libre non planifié": free-form deposits on Vie-placements
+//     (Branche 21/23) products. Broker sometimes enters the capital amount in
+//     the "Prime totale annuelle" column, which inflates totals by 3-5x.
+//   - "Prime unique": single-shot premium paid once at subscription; no
+//     annualized value.
+// The 2025 export zero-fills these correctly; older exports (2019-2022) do not.
+// Exclude them from recurring-premium sums so the metric is comparable across
+// snapshots.
+const NON_RECURRING_PERIODICITIES = new Set([
+  'Libre',
+  'Libre non planifié',
+  'Prime unique',
+]);
+
+function isRecurringAnnualPremium(cp) {
+  const per = String(cp?.periodicite ?? '').trim();
+  return !NON_RECURRING_PERIODICITIES.has(per);
+}
+
 // Policy types that, by themselves, mark a client as Entreprise (E) in the
 // reference rapport. Derived empirically from the 12/2019 snapshot by matching
 // CLIENT TOTAL's Type PE column: every type below is 100% E-coded in the ref
@@ -865,7 +905,9 @@ export function computeKpiSummary(clients, polices, compagniePolices, sinistres,
   let total_premium = 0;
   let total_commission = 0;
   for (const cp of compagniePolices) {
-    total_premium += Number(cp.prime_totale_annuelle) || 0;
+    if (isRecurringAnnualPremium(cp)) {
+      total_premium += Number(cp.prime_totale_annuelle) || 0;
+    }
     total_commission += Number(cp.commission_annuelle) || 0;
   }
   const avg_premium_per_client = active_clients
@@ -971,6 +1013,7 @@ export function computeOpportunities(clients, polices, compagniePolices, snapsho
   for (const cp of compagniePolices) {
     const dk = cp.dossier_key;
     if (!dk) continue;
+    if (!isRecurringAnnualPremium(cp)) continue;
     clientPremium.set(dk, (clientPremium.get(dk) || 0) + (Number(cp.prime_totale_annuelle) || 0));
   }
 
@@ -1101,6 +1144,8 @@ export function computeClientTotal(clients, polices, compagniePolices, snapshotY
 
   // Drop utility/reinsurer clients (dossiers 9990+) and their attached rows.
   ({ clients, polices, compagniePolices } = excludeUtility(clients, polices, compagniePolices, []));
+  // Drop historical compagnie rows that no longer map to an active police.
+  compagniePolices = restrictToActivePolices(polices, compagniePolices);
 
   // Full P/E classification (pm=morale | ss=TI | has prof-only policy type).
   const entrepriseKeys = computeEntrepriseKeys(clients, polices);
@@ -1244,6 +1289,8 @@ export function computeAllStats(clients, polices, compagniePolices, sinistres, s
   // Drop utility/reinsurer clients (dossiers 9990+) across every section.
   ({ clients, polices, compagniePolices, sinistres } =
     excludeUtility(clients, polices, compagniePolices, sinistres));
+  // Drop historical compagnie rows that no longer map to an active police.
+  compagniePolices = restrictToActivePolices(polices, compagniePolices);
 
   const entrepriseKeys = computeEntrepriseKeys(clients, polices);
 
