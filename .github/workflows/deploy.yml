@@ -33,20 +33,10 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Generate fixtures
-        run: python3 tests/fixtures/generate.py
-
-      - name: Run Python baseline
-        run: python3 tests/parity/python_baseline.py
-
-      - name: Parity check (JS ↔ Python)
-        run: node tests/parity/run.mjs
-
+      # The Python baseline + JS/Python parity check were scaffolding for the
+      # initial port. The JS analyzer is now the source of truth and outputs
+      # more fields than the Python reference, so the parity check is stale.
+      # Smoke tests still validate the client-side DB/parser/crypto stack.
       - name: Smoke tests
         run: node tests/smoke/run.mjs
 
