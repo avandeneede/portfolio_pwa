@@ -169,14 +169,27 @@ function formatSexe(raw) {
   return null;
 }
 
-// Broker Phenix convention: dossiers 9990+ are internal/utility records for
-// assistance companies, reinsurers, and a catch-all "TOUT LE MONDE" entry.
-// They have policies attached but are not real clients, so they inflate
+// Broker Phenix stores a handful of synthetic "clients" to hang reinsurer /
+// assistance-company policies off, plus a catch-all entry that groups orphan
+// policies. They carry real polices but are NOT real clients, so they inflate
 // active-client counts, Personne-morale breakdowns, and the CLIENT TOTAL
-// export. Exclude them from all analyses.
+// export. We identify them by their canonical names (stable across snapshots
+// from 2019 through 2025) rather than by dossier range, because the broker
+// renumbered real clients into the 10000–113000 range starting in 2022 and the
+// older "dossier >= 9990" heuristic was stripping ~2500 real clients.
+const UTILITY_CLIENT_NAMES = new Set([
+  'POLICE UNIQUE',
+  'COMPAGNIE',
+  'COMPAGNIES',
+  'EUROP ASSISTANCE',
+  'MONDIAL ASSISTANCE',
+  'ALLIANZ GLOBAL ASSISTANCE',
+  'TOUT LE MONDE',
+]);
+
 function isUtilityClient(c) {
-  const d = Number(String(c?.dossier ?? '').trim());
-  return Number.isFinite(d) && d >= 9990;
+  const nom = String(c?.nom ?? '').trim().toUpperCase();
+  return UTILITY_CLIENT_NAMES.has(nom);
 }
 
 // Given the full set of clients, returns the dossier_keys to exclude so we
