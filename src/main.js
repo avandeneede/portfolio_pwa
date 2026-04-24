@@ -39,10 +39,10 @@ function loadSavedLocale() {
       return legacy;
     }
   } catch (_) { /* ignore */ }
-  // FR is the hard default — never derive from navigator.language. The user's
-  // target audience is French-speaking Belgian brokers; anyone else can switch
-  // manually from the settings screen.
-  return 'fr';
+  // No saved preference: use navigator.language when it matches a supported
+  // locale, otherwise fall back to FR (the primary audience — Belgian brokers).
+  const nav = (navigator.language || '').slice(0, 2).toLowerCase();
+  return SUPPORTED_LOCALES.includes(nav) ? nav : 'fr';
 }
 
 // App-wide state. Kept simple: screens read/write through ctx.
