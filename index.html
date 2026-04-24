@@ -2,6 +2,19 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
+<!--
+  Content Security Policy (meta-tag form; GitHub Pages can't set response
+  headers). Deliberately strict:
+    - default-src 'self'             : load everything from our origin
+    - script-src 'self' 'wasm-unsafe-eval' : allow vendored sql.js WASM to compile
+    - style-src 'self' 'unsafe-inline' : small inline styles + data URLs for logos
+    - img-src 'self' data: blob:     : logo data URLs, generated chart blobs
+    - connect-src 'self'             : no outbound network, privacy by default
+    - object-src 'none'              : no plugins
+    - base-uri 'self'                : lock down <base> injection
+    - form-action 'self'             : no cross-origin form POSTs
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">

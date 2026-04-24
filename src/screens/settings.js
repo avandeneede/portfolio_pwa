@@ -7,6 +7,7 @@ import { backendName, clear as clearLocal } from '../store/local.js';
 import { Database } from '../store/db.js';
 import { exportEncrypted, importEncrypted, buildFilename, downloadBlob } from '../store/backup.js';
 import { loadProfile, saveProfile } from '../store/profile.js';
+import { getSyncHandle, setSyncHandle, clearSyncHandle, writeToSync, isSyncSupported } from '../store/cloud_sync.js';
 import { icon, iconTile } from '../ui/icon.js';
 
 function askPassphrase(message) {
@@ -46,12 +47,19 @@ function profileField(group, field, label, opts = {}) {
 }
 
 export function renderSettings(root, ctx) {
-  const state = { backend: 'unknown', busy: false };
+  const state = { backend: 'unknown', busy: false, syncName: null };
 
   backendName().then((name) => {
     state.backend = name;
     const el = root.querySelector('[data-backend]');
     if (el) el.textContent = name;
+  }).catch(() => {});
+
+  // Populate the sync section once we know whether a handle is linked.
+  getSyncHandle().then((rec) => {
+    state.syncName = rec ? (rec.name || 'sync file') : null;
+    const el = root.querySelector('[data-sync-status]');
+    if (el) el.textContent = state.syncName || t('settings.sync.not_linked');
   }).catch(() => {});
 
   async function handleExport() {
@@ -61,6 +69,10 @@ export function renderSettings(root, ctx) {
       toast(t('settings.backup.no_snapshots'), 'warning');
       return;
     }
+    // Ask whether to include the user + company profile in the archive. Default
+    // is NO — a fresh device shouldn't inherit another user's identity without
+    // an explicit opt-in.
+    const includeProfile = window.confirm(t('settings.backup.include_profile_prompt'));
     const pass = askPassphrase(t('settings.passphrase.hint') + '\n\n' + t('settings.passphrase.set'));
     if (!pass) {
       toast(t('error.crypto.no_passphrase'), 'danger');
@@ -74,7 +86,8 @@ export function renderSettings(root, ctx) {
     state.busy = true;
     try {
       const dbBytes = ctx.db.export();
-      const blob = await exportEncrypted(dbBytes, pass);
+      const profile = includeProfile ? loadProfile() : null;
+      const blob = await exportEncrypted(dbBytes, pass, { profile });
       const latest = snapshots[0];
       const filename = buildFilename(latest.label, new Date(latest.snapshot_date));
       downloadBlob(blob, filename);
@@ -91,7 +104,7 @@ export function renderSettings(root, ctx) {
     if (state.busy) return;
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.portefeuille,application/octet-stream';
+    input.accept = '.ptf,.portefeuille,application/octet-stream';
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
@@ -103,11 +116,17 @@ export function renderSettings(root, ctx) {
       state.busy = true;
       try {
         const buf = new Uint8Array(await file.arrayBuffer());
-        const dbBytes = await importEncrypted(buf, pass);
+        const { db: dbBytes, profile } = await importEncrypted(buf, pass);
         const newDb = Database.open(dbBytes);
         ctx.db.close();
         ctx.db = newDb;
         await ctx.persistDb();
+        // Profile is offered as a second opt-in: even if the archive carries
+        // one, we don't clobber the local identity unless the user confirms.
+        if (profile && window.confirm(t('settings.backup.import_profile_prompt'))) {
+          saveProfile(profile);
+          if (typeof ctx.onProfileChanged === 'function') ctx.onProfileChanged();
+        }
         toast(t('settings.backup.import_done'), 'success');
         ctx.navigate('/');
       } catch (e) {
@@ -121,6 +140,54 @@ export function renderSettings(root, ctx) {
       }
     };
     input.click();
+  }
+
+  // Cloud sync: pick a file in iCloud Drive / OneDrive / Dropbox. We persist
+  // the FileSystemFileHandle in IndexedDB and write to it after every DB save.
+  // Chromium-only (showSaveFilePicker). On Safari/Firefox the buttons are
+  // hidden via the feature check below.
+  async function handleSyncPick() {
+    if (state.busy) return;
+    const pass = askPassphrase(t('settings.passphrase.hint') + '\n\n' + t('settings.passphrase.set'));
+    if (!pass) {
+      toast(t('error.crypto.no_passphrase'), 'danger');
+      return;
+    }
+    const confirm = askPassphrase(t('settings.passphrase.confirm'));
+    if (confirm !== pass) {
+      toast(t('settings.passphrase.mismatch'), 'danger');
+      return;
+    }
+    try {
+      const latest = ctx.db.listSnapshots()[0];
+      const suggested = latest
+        ? buildFilename(latest.label, new Date(latest.snapshot_date))
+        : buildFilename('portefeuille');
+      // eslint-disable-next-line no-undef
+      const handle = await window.showSaveFilePicker({
+        suggestedName: suggested,
+        types: [{
+          description: 'Portefeuille backup',
+          accept: { 'application/octet-stream': ['.ptf'] },
+        }],
+      });
+      await setSyncHandle(handle, { passphrase: pass });
+      // Initial write so the picked file has current data.
+      await writeToSync(ctx.db.export(), loadProfile());
+      toast(t('settings.sync.linked'), 'success');
+      ctx.render(renderSettings);
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // user cancelled
+      console.error(e);
+      toast(t('error.generic') + ' ' + e.message, 'danger');
+    }
+  }
+
+  async function handleSyncClear() {
+    if (!window.confirm(t('settings.sync.unlink_confirm'))) return;
+    await clearSyncHandle();
+    toast(t('settings.sync.unlinked'), 'success');
+    ctx.render(renderSettings);
   }
 
   // Full reset: wipe user data AND the PWA's cached code/assets + service
@@ -361,6 +428,74 @@ export function renderSettings(root, ctx) {
           h('div', { class: 'row-title' }, t('settings.backup.import')),
         ]),
         h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
+      ]),
+    ]),
+
+    // Cloud sync section. Hidden entirely on browsers without the File System
+    // Access API (Safari/Firefox today) — we have no way to pick a file handle
+    // there, so offering the feature would be false advertising.
+    isSyncSupported() ? h('div', { class: 'section-head' },
+      h('span', {}, t('settings.sync.title'))) : null,
+    isSyncSupported() ? h('div', { class: 'group' }, [
+      h('div', { class: 'row' }, [
+        iconTile('arrow.clockwise', '--teal'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.sync.status')),
+          h('div', { class: 'row-sub', 'data-sync-status': '' },
+            state.syncName || t('settings.sync.not_linked')),
+        ]),
+      ]),
+      h('div', { class: 'row interactive', onClick: handleSyncPick }, [
+        iconTile('tray.and.arrow.up', '--indigo'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.sync.link')),
+          h('div', { class: 'row-sub' }, t('settings.sync.link_hint')),
+        ]),
+        h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
+      ]),
+      h('div', { class: 'row interactive', onClick: handleSyncClear }, [
+        iconTile('trash', '--muted'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.sync.unlink')),
+        ]),
+        h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
+      ]),
+    ]) : null,
+
+    h('div', { class: 'section-head' }, h('span', {}, t('settings.help.title'))),
+    h('div', { class: 'group' }, [
+      h('div', { class: 'row interactive', onClick: () => ctx.navigate('/tutorial') }, [
+        iconTile('doc.text', '--accent'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.help.tutorial')),
+          h('div', { class: 'row-sub' }, t('settings.help.tutorial_hint')),
+        ]),
+        h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
+      ]),
+    ]),
+
+    h('div', { class: 'section-head' }, h('span', {}, t('settings.privacy.title'))),
+    h('div', { class: 'group' }, [
+      h('div', { class: 'row disclaimer' }, [
+        iconTile('lock', '--success'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.privacy.local_title')),
+          h('div', { class: 'row-sub' }, t('settings.privacy.local_body')),
+        ]),
+      ]),
+      h('div', { class: 'row disclaimer' }, [
+        iconTile('exclamationmark.triangle', '--warning'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.privacy.profile_title')),
+          h('div', { class: 'row-sub' }, t('settings.privacy.profile_body')),
+        ]),
+      ]),
+      h('div', { class: 'row disclaimer' }, [
+        iconTile('person.2', '--indigo'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.privacy.gdpr_title')),
+          h('div', { class: 'row-sub' }, t('settings.privacy.gdpr_body')),
+        ]),
       ]),
     ]),
 

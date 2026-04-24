@@ -108,18 +108,28 @@ export function renderUpload(root, ctx) {
     state.busy = true; render();
     try {
       const XLSX = await ctx.loadXLSX();
-      for (const f of files) {
+      // Parse files in parallel. Typical broker upload is 2-4 small XLSX files,
+      // so unbounded concurrency here is fine — no risk of thrashing memory.
+      // Each file is wrapped so one bad sheet doesn't reject the whole batch.
+      const results = await Promise.all(files.map(async (f) => {
         try {
           const buf = await f.arrayBuffer();
           const parsed = await parseFile(XLSX, buf, f.name);
-          if (parsed.type && state.slots[parsed.type] !== undefined) {
-            state.slots[parsed.type] = { parsed, filename: f.name };
-          } else {
-            state.unrecognized.push({ parsed, filename: f.name });
-          }
+          return { ok: true, f, parsed };
         } catch (err) {
-          console.error(err);
-          toast(`${f.name}: ${err.message}`, 'danger');
+          return { ok: false, f, err };
+        }
+      }));
+      for (const r of results) {
+        if (!r.ok) {
+          console.error(r.err);
+          toast(`${r.f.name}: ${r.err.message}`, 'danger');
+          continue;
+        }
+        if (r.parsed.type && state.slots[r.parsed.type] !== undefined) {
+          state.slots[r.parsed.type] = { parsed: r.parsed, filename: r.f.name };
+        } else {
+          state.unrecognized.push({ parsed: r.parsed, filename: r.f.name });
         }
       }
     } finally {

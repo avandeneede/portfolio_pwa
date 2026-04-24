@@ -6,6 +6,7 @@ import { addRoute, start, navigate, currentPath } from './router.js';
 import { init as initDb, Database } from './store/db.js';
 import { load as loadBytes, save as saveBytes, backendName, requestPersistent } from './store/local.js';
 import { loadProfile, saveProfile } from './store/profile.js';
+import { writeToSync } from './store/cloud_sync.js';
 import { toast } from './ui/toast.js';
 import { renderShell, refreshSidebar, getContentRoot } from './ui/shell.js';
 import { renderHome } from './screens/home.js';
@@ -14,6 +15,7 @@ import { renderPreview } from './screens/preview.js';
 import { renderDashboard } from './screens/dashboard.js';
 import { renderEvolution } from './screens/evolution.js';
 import { renderSettings } from './screens/settings.js';
+import { renderTutorial } from './screens/tutorial.js';
 import { buildBranchIndex } from './core/branch_mapping.js';
 
 const root = document.getElementById('root');
@@ -55,7 +57,14 @@ async function persistDb() {
   if (!ctx.db || ctx.saving) return;
   ctx.saving = true;
   try {
-    await saveBytes(ctx.db.export());
+    const bytes = ctx.db.export();
+    await saveBytes(bytes);
+    // Best-effort cloud-sync write. Fire-and-forget: sync failures must not
+    // block the local save path (user is offline, file moved, permission
+    // revoked, etc.). Surfaced via console so devtools can debug.
+    writeToSync(bytes, loadProfile()).catch((e) => {
+      console.warn('[sync] write failed', e);
+    });
   } finally {
     ctx.saving = false;
   }
@@ -172,6 +181,7 @@ async function bootstrap() {
   addRoute('/snapshot/:id', ({ params }) => render(renderDashboard, { snapshotId: Number(params.id) }));
   addRoute('/evolution', () => render(renderEvolution));
   addRoute('/settings', () => render(renderSettings));
+  addRoute('/tutorial', () => render(renderTutorial));
 
   start(() => render(renderHome));
 }

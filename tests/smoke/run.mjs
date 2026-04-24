@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 import { encryptBlob, decryptBlob } from '../../src/store/crypto.js';
+import { exportEncrypted, importEncrypted } from '../../src/store/backup.js';
 import { parseWorkbook } from '../../src/ingest/parser.js';
 import { init as initDb, Database } from '../../src/store/db.js';
 
@@ -62,6 +63,37 @@ await test('crypto: corrupt blob fails', async () => {
   let threw = false;
   try { await decryptBlob(blob, 'pass'); } catch { threw = true; }
   assert(threw, 'decryption fails on tampered ciphertext');
+});
+
+// ---------------------------------------------------------------------------
+// Backup envelope v2 (.ptf, opt-in profile)
+// ---------------------------------------------------------------------------
+await test('backup: round-trip without profile', async () => {
+  const db = new Uint8Array([0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 1, 2, 3, 4]);
+  const blob = await exportEncrypted(db, 'pw');
+  const out = await importEncrypted(blob, 'pw');
+  assert(out.db.length === db.length, 'db bytes length preserved');
+  assert(out.db[0] === 0x53 && out.db[6] === 1, 'db bytes content preserved');
+  assert(out.profile === null, 'profile is null when not included');
+});
+
+await test('backup: round-trip with profile', async () => {
+  const db = new Uint8Array([9, 8, 7, 6]);
+  const profile = { user: { name: 'Alice' }, company: { name: 'Acme', vat: 'BE0.000' } };
+  const blob = await exportEncrypted(db, 'pw', { profile });
+  const out = await importEncrypted(blob, 'pw');
+  assert(out.db.length === 4 && out.db[0] === 9 && out.db[3] === 6, 'db bytes preserved');
+  assert(out.profile && out.profile.user.name === 'Alice', 'profile.user.name round-trips');
+  assert(out.profile.company.vat === 'BE0.000', 'profile.company.vat round-trips');
+});
+
+await test('backup: legacy v1 blob (no PTFP header) still reads', async () => {
+  // Simulate a pre-v2 backup: plain DB bytes wrapped in the PORT v1 envelope.
+  const db = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+  const blob = await encryptBlob(db, 'pw'); // PORT v1, plaintext = raw db
+  const out = await importEncrypted(blob, 'pw');
+  assert(out.db.length === db.length, 'legacy blob yields raw db bytes');
+  assert(out.profile === null, 'legacy blob has no profile');
 });
 
 // ---------------------------------------------------------------------------

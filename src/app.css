@@ -1693,3 +1693,81 @@ button { font-family: inherit; }
 
 /* Evolution card tightening so the extra chart width shows up visually. */
 .evo-card { padding: 16px 20px 20px; }
+
+/* ------------------------------------------------------------------ *
+ * Settings — privacy disclaimer rows
+ * Non-interactive info rows that still match the row visual style.
+ * ------------------------------------------------------------------ */
+.row.disclaimer {
+  align-items: flex-start;
+  cursor: default;
+}
+.row.disclaimer .row-main .row-sub {
+  white-space: normal;
+  line-height: 1.45;
+  margin-top: 4px;
+  color: var(--text-2);
+}
+
+/* ------------------------------------------------------------------ *
+ * Tutorial screen
+ * ------------------------------------------------------------------ */
+.tutorial-list {
+  display: flex; flex-direction: column; gap: 12px;
+}
+.tutorial-card {
+  background: var(--card);
+  border: 0.5px solid var(--separator);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.tutorial-summary {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+.tutorial-summary::-webkit-details-marker { display: none; }
+.tutorial-summary .tutorial-title {
+  flex: 1; min-width: 0;
+  font-size: 15px; font-weight: 600; color: var(--text);
+}
+.tutorial-card[open] .tutorial-summary {
+  border-bottom: 0.5px solid var(--separator);
+}
+.tutorial-card[open] .tutorial-summary > :last-child {
+  transform: rotate(90deg);
+  transition: transform .15s;
+}
+.tutorial-body {
+  padding: 8px 16px 16px;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.tutorial-body p { margin: 8px 0; }
+.tutorial-body p:first-child { margin-top: 0; }
+.tutorial-body p:last-child { margin-bottom: 0; }
+
+/* ------------------------------------------------------------------ *
+ * Mobile polish
+ * ------------------------------------------------------------------ */
+@media (max-width: 720px) {
+  /* Tables inside dashboard cards can be wider than the viewport. Allow the
+   * section body to scroll horizontally and hint a reasonable min-width on
+   * the table so it doesn't squish into unreadable column widths. */
+  .dash-section-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .dash-table { min-width: 480px; }
+
+  /* Page header: subtitle under title, actions wrap below. */
+  .page-head { gap: 8px; }
+  .page-head .page-title { font-size: 24px; }
+
+  /* Tighter padding in tutorial on narrow screens. */
+  .tutorial-summary { padding: 12px 14px; }
+  .tutorial-body { padding: 4px 14px 14px; font-size: 13.5px; }
+
+  /* Disclaimer rows: keep icon tile and text on separate lines. */
+  .row.disclaimer { flex-direction: column; gap: 8px; }
+  .row.disclaimer .row-main { padding-left: 0; }
+}
