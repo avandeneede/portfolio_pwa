@@ -7,8 +7,9 @@
 
 import { h, mount } from '../ui/dom.js';
 import { t } from '../i18n/index.js';
-import { formatInt, formatDecimal, formatPercent, formatDate, branchLabel } from '../ui/format.js';
+import { formatInt, formatPercent, formatDate, branchLabel } from '../ui/format.js';
 import { hBarChart, vBarChart, pieChart } from '../ui/charts.js';
+import { buildRatiosSummary } from '../core/ratios_summary.js';
 
 const PAGE_COUNT = 10;
 
@@ -671,109 +672,30 @@ function page9(s, companies) {
 }
 
 function page10(s, stats) {
-  const kpi = stats.kpi_summary;
-  const ov = stats.overview;
-  const demo = stats.demographics;
-  const ppc = stats.policies_per_client;
-  const dq = {};
-  for (const f of stats.data_quality.fields) dq[f.key] = f;
+  const { rows, boxes: ratiosBoxes } = buildRatiosSummary(stats);
 
-  const byBranch = {};
-  for (const b of stats.branches.branches) byBranch[b.code] = b;
-
-  const pctKnown = (k) => {
-    const f = dq[k];
-    if (!f) return 0;
-    const tot = f.known + f.missing;
-    return tot ? (f.known / tot * 100) : 0;
-  };
-
-  let clients60plus = 0;
-  let policies60plus = 0;
-  for (const b of demo.age_brackets || []) {
-    if (b.label === '60-69' || b.label === '70-+') {
-      clients60plus += b.client_count;
-      policies60plus += b.policy_count;
-    }
-  }
-  const totalPoliciesInBrackets = (demo.age_brackets || []).reduce((a, b) => a + b.policy_count, 0) || 1;
-  const denom60 = demo.known_age || demo.total || 1;
-  const pct_clients_60plus = clients60plus / denom60 * 100;
-  const pct_policies_60plus = totalPoliciesInBrackets ? (policies60plus / totalPoliciesInBrackets * 100) : 0;
-
-  const distCount = (label) => (ppc.distribution.find((d) => d.label === label) || { count: 0 }).count;
-  const active = ov.active_clients || 1;
-  const pct_mono = distCount('1') / active * 100;
-  const pct_bi = distCount('2') / active * 100;
-  const pct_5plus = distCount('5+') / active * 100;
-
-  const freq_sinistres = kpi.total_polices
-    ? (kpi.total_sinistres / kpi.total_polices * 100)
-    : 0;
-
-  const pct_polices_p = kpi.total_polices
-    ? (kpi.polices_particuliers / kpi.total_polices * 100) : 0;
-  const pct_polices_e = kpi.total_polices
-    ? (kpi.polices_entreprises / kpi.total_polices * 100) : 0;
-
-  const pct_menages_mono = kpi.total_menages
-    ? (kpi.menages_mono_police / kpi.total_menages * 100) : 0;
-
-  const hasCommissions = (kpi.total_commission || 0) > 0;
-  const naLabel = t('common.not_available');
-  const nSinistres = kpi.total_sinistres || 0;
-  const sinistreYearLabel = kpi.sinistre_year
-    ? `${t('report.ratio.nb_sinistres')} ${kpi.sinistre_year}`
-    : t('report.ratio.nb_sinistres');
-
-  const totalPol = kpi.total_polices || 1;
-  const countOf = (code) => (byBranch[code]?.count || 0);
-  const pct_vie_all = (countOf('VIE') + countOf('PLA') + countOf('CRED')) / totalPol * 100;
-  const pct_auto = countOf('AUT') / totalPol * 100;
-  const incendiePackageP = (countOf('INC') + countOf('PACP')) / totalPol * 100;
-
-  const leftRows = [
-    { cells: [t('report.ratio.total_with_police'), { text: formatInt(ov.active_clients), align: 'right' }] },
-    { cells: [t('report.ratio.pct_particuliers'), { text: formatPercent(ov.active_clients ? (ov.active_particuliers / ov.active_clients * 100) : 0, 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_entreprises'), { text: formatPercent(ov.active_clients ? (ov.active_entreprises / ov.active_clients * 100) : 0, 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_p_60plus'), { text: formatPercent(pct_clients_60plus, 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_policies_60plus'), { text: formatPercent(pct_policies_60plus, 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_sex_known'), { text: formatPercent(pctKnown('sexe'), 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_age_known'), { text: formatPercent(pctKnown('date_naissance'), 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_social_known'), { text: formatPercent(pctKnown('statut_social'), 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_civil_known'), { text: formatPercent(pctKnown('etat_civil'), 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_phone_known'), { text: formatPercent(pctKnown('telephone'), 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_email_known'), { text: formatPercent(pctKnown('email'), 2), align: 'right' }] },
-    { cells: [t('report.ratio.mono_count'), { text: formatInt(kpi.mono_policy_clients), align: 'right' }] },
-    { cells: [t('report.ratio.pct_mono'), { text: formatPercent(pct_mono, 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_bi'), { text: formatPercent(pct_bi, 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_5plus'), { text: formatPercent(pct_5plus, 2), align: 'right' }] },
-    { cells: [t('report.ratio.total_policies'), { text: formatInt(kpi.total_polices), align: 'right' }] },
-    { cells: [t('report.ratio.polices_p'), { text: ratioValueWithPct(kpi.polices_particuliers || 0, pct_polices_p), align: 'right' }] },
-    { cells: [t('report.ratio.polices_e'), { text: ratioValueWithPct(kpi.polices_entreprises || 0, pct_polices_e), align: 'right' }] },
-    { cells: [t('report.ratio.avg_policies_per_client'), { text: formatDecimal(kpi.avg_polices_per_client || 0, 2), align: 'right' }] },
-    { cells: [t('report.ratio.avg_polices_p'), { text: formatDecimal(kpi.avg_polices_per_client_p || 0, 2), align: 'right' }] },
-    { cells: [t('report.ratio.avg_polices_e'), { text: formatDecimal(kpi.avg_polices_per_client_e || 0, 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_vie'), { text: formatPercent(pct_vie_all, 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_auto'), { text: formatPercent(pct_auto, 2), align: 'right' }] },
-    { cells: [t('report.ratio.pct_incendie_pkg'), { text: formatPercent(incendiePackageP, 2), align: 'right' }] },
-    { cells: [t('report.ratio.total_commission'), { text: hasCommissions ? formatInt(kpi.total_commission) : naLabel, align: 'right' }] },
-    { cells: [t('report.ratio.commission_per_client'), { text: hasCommissions ? formatInt(kpi.avg_commission_per_client) : naLabel, align: 'right' }] },
-    { cells: [t('report.ratio.commission_per_policy'), { text: hasCommissions && kpi.total_polices ? formatInt(Math.round(kpi.total_commission / kpi.total_polices)) : naLabel, align: 'right' }] },
-    { cells: [sinistreYearLabel, { text: formatInt(nSinistres), align: 'right' }] },
-    { cells: [t('report.ratio.freq_sinistres'), { text: formatPercent(freq_sinistres, 2), align: 'right' }] },
-  ];
+  const leftRows = rows.map((r) => ({
+    cells: [
+      r.label,
+      {
+        text: r.pct != null
+          ? ratioValueWithPct(r.rawValue, r.rawPct)
+          : r.value,
+        align: 'right',
+      },
+    ],
+  }));
 
   // Summary side boxes (households).
   const boxes = h('div', { class: 'rp-summary-boxes' }, [
     h('div', { class: 'rp-summary-box' }, [
-      h('div', { class: 'rp-summary-box-head' }, t('report.ratio.total_menages')),
-      h('div', { class: 'rp-summary-box-value' }, formatInt(kpi.total_menages || 0)),
+      h('div', { class: 'rp-summary-box-head' }, ratiosBoxes.total_menages.label),
+      h('div', { class: 'rp-summary-box-value' }, ratiosBoxes.total_menages.value),
     ]),
     h('div', { class: 'rp-summary-box' }, [
-      h('div', { class: 'rp-summary-box-head' }, t('report.ratio.menages_mono')),
-      h('div', { class: 'rp-summary-box-value' }, formatInt(kpi.menages_mono_police || 0)),
-      h('div', { class: 'rp-summary-box-sub' }, formatPercent(pct_menages_mono, 2) + ' ' + t('report.ratio.pct_menages_mono').toLowerCase()),
+      h('div', { class: 'rp-summary-box-head' }, ratiosBoxes.menages_mono.label),
+      h('div', { class: 'rp-summary-box-value' }, ratiosBoxes.menages_mono.value),
+      h('div', { class: 'rp-summary-box-sub' }, ratiosBoxes.menages_mono.sub),
     ]),
   ]);
 

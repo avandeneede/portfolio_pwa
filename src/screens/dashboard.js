@@ -7,6 +7,7 @@ import { t } from '../i18n/index.js';
 import { toast } from '../ui/toast.js';
 import { formatInt, formatCurrency, formatPercent, formatDate, formatMonthYear, branchLabel } from '../ui/format.js';
 import { computeAllStats, computeClientTotal } from '../core/analyzer.js';
+import { buildRatiosSummary } from '../core/ratios_summary.js';
 import { icon, iconTile } from '../ui/icon.js';
 import { pieChart, hBarChart, vBarChart } from '../ui/charts.js';
 import { renderReport, printReport } from './report.js';
@@ -455,6 +456,7 @@ export function renderDashboard(root, ctx, args) {
     ]),
   ]);
 
+  const hasCommission = (kpiS.total_commission || 0) > 0;
   const kpiGrid = h('div', { class: 'kpi-grid' }, [
     kpi(t('kpi.total_clients'), formatInt(kpiS.total_clients),
       `${formatInt(kpiS.active_clients)} ${t('kpi.active_clients')}`, '--accent'),
@@ -462,6 +464,10 @@ export function renderDashboard(root, ctx, args) {
       `${kpiS.avg_polices_per_client} ${t('kpi.avg_polices')}`, '--indigo'),
     kpi(t('kpi.total_premium'), formatCurrency(kpiS.total_premium),
       `${formatCurrency(kpiS.avg_premium_per_client)} / client`, '--teal'),
+    kpi(t('kpi.total_commission'),
+      hasCommission ? formatCurrency(kpiS.total_commission) : t('common.not_available'),
+      hasCommission ? `${formatCurrency(kpiS.avg_commission_per_client)} / client` : null,
+      '--success'),
     kpi(t('kpi.sinistres'), formatInt(kpiS.total_sinistres),
       `${formatInt(kpiS.clients_with_sinistres)} ${t('kpi.clients_with_sinistres')}`, '--warning'),
   ]);
@@ -1051,11 +1057,52 @@ export function renderDashboard(root, ctx, args) {
     ]),
   ]);
 
-  // ---- Section 5: Opportunities -------------------------------------------
+  // ---- Section 5: Ratios summary ------------------------------------------
+  //
+  // Mirrors page 10 of the print report (Tableau résumé des principaux
+  // ratios) so the broker sees the exact same numbers on screen as in the
+  // PDF. Built from the shared buildRatiosSummary() helper so both surfaces
+  // stay in lockstep.
+
+  const { rows: ratioRows } = buildRatiosSummary(stats);
+  // Ménages summary boxes are already shown in the hero summaryGrid at the
+  // top of the dashboard, so we skip them here and surface only the long
+  // ratios table. For the polices-p / polices-e rows we want the count and
+  // the % visually separated (same treatment as the print report, .rp-val-pct
+  // is a shared inline-flex helper).
+  const ratioValueCell = (r) => {
+    if (r.pct == null) return { text: r.value, align: 'right' };
+    return {
+      text: h('span', { class: 'rp-val-pct' }, [
+        h('span', { class: 'rp-val' }, r.value),
+        h('span', { class: 'rp-pct' }, r.pct),
+      ]),
+      align: 'right',
+    };
+  };
+  const sec5 = section({
+    number: 5, title: t('report.s6_title'),
+    tint: '--teal', iconName: 'chart.bar',
+    description: t('report.s6_info'),
+  }, [
+    card([
+      cardHead(t('report.s6_title'), t('report.s6_info')),
+      simpleTable(
+        [{ label: t('report.ratio.column') },
+         { label: t('report.ratio.global'), align: 'right' }],
+        ratioRows.map((r) => ({
+          key: `ratio:${r.key}`,
+          cells: [r.label, ratioValueCell(r)],
+        }))
+      ),
+    ]),
+  ]);
+
+  // ---- Section 6: Opportunities -------------------------------------------
 
   const opps = stats.opportunities;
-  const sec5 = section({
-    number: 5, title: t('dashboard.opportunities'),
+  const sec6 = section({
+    number: 6, title: t('dashboard.opportunities'),
     tint: '--success', iconName: 'wand.and.stars',
     description: t('dash.s5_desc'),
   }, [
@@ -1084,6 +1131,7 @@ export function renderDashboard(root, ctx, args) {
     sec3,
     sec4,
     sec5,
+    sec6,
   ]));
 
   // Wire chart ↔ table hover sync per section. Scoping at the section level
