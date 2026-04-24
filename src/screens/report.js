@@ -57,10 +57,19 @@ function infoText(text) {
 
 function table(rows, opts = {}) {
   const cls = 'rp-table' + (opts.tone ? ` tone-${opts.tone}` : '');
+  // cellClass: joins alignment + "is-current" so the ratios-summary table can
+  // tint the current-snapshot column (matches the yellow header on the 2022
+  // reference rapport). Used for both th and td.
+  const cellClass = (c) => {
+    const parts = [];
+    if (c && typeof c === 'object' && c.align) parts.push(`a-${c.align}`);
+    if (c && typeof c === 'object' && c.isCurrent) parts.push('is-current');
+    return parts.length ? parts.join(' ') : null;
+  };
   return h('table', { class: cls }, [
     opts.head ? h('thead', {}, h('tr', {},
       opts.head.map((c) => h('th', {
-        class: c && typeof c === 'object' && c.align ? `a-${c.align}` : null,
+        class: cellClass(c),
       }, c && typeof c === 'object' && 'text' in c ? c.text : c))
     )) : null,
     h('tbody', {}, rows.map((r) => {
@@ -74,7 +83,7 @@ function table(rows, opts = {}) {
           style: r.style || null,
         },
         (r.cells || r).map((c) => h('td', {
-          class: c && typeof c === 'object' && c.align ? `a-${c.align}` : null,
+          class: cellClass(c),
           style: c && typeof c === 'object' && c.style ? c.style : null,
         },
         c && typeof c === 'object' && 'text' in c ? c.text : c))
@@ -671,18 +680,32 @@ function page9(s, companies) {
   ];
 }
 
-function page10(s, stats) {
-  const { rows, boxes: ratiosBoxes } = buildRatiosSummary(stats);
+function page10(s, stats, ratioSeries, locale) {
+  // Build the ratios block with one column per snapshot. ratioSeries is
+  // [current, prior1, prior2] (fewer if not enough history). The single-stats
+  // fallback keeps older callers (and unit tests) working.
+  const series = ratioSeries && ratioSeries.length
+    ? ratioSeries
+    : [{ stats, snapshot: s }];
+  const { rows, columns, boxes: ratiosBoxes } = buildRatiosSummary(series, { locale });
+
+  // Head row: "Particuliers et entreprises" on the left, then one header per
+  // column. The current column is tinted (yellow in the reference rapport).
+  const head = [
+    { text: t('report.ratio.column'), align: 'left' },
+    ...columns.map((c) => ({ text: c.label, align: 'right', isCurrent: c.isCurrent })),
+  ];
 
   const leftRows = rows.map((r) => ({
     cells: [
       r.label,
-      {
-        text: r.pct != null
-          ? ratioValueWithPct(r.rawValue, r.rawPct)
-          : r.value,
+      ...r.values.map((v, i) => ({
+        text: v.pct != null
+          ? ratioValueWithPct(v.rawValue, v.rawPct)
+          : v.value,
         align: 'right',
-      },
+        isCurrent: columns[i]?.isCurrent,
+      })),
     ],
   }));
 
@@ -703,7 +726,7 @@ function page10(s, stats) {
     sectionTitle(4, t('report.s6_title')),
     infoText(t('report.s6_info')),
     h('div', { class: 'rp-grid-summary' }, [
-      h('div', {}, table(leftRows, { head: [t('report.ratio.column'), t('report.ratio.global')], tone: 'blue' })),
+      h('div', {}, table(leftRows, { head, tone: 'blue' })),
       h('div', {}, boxes),
     ]),
   ];
@@ -713,9 +736,10 @@ function page10(s, stats) {
 // Public API
 // -----------------------------------------------------------------------------
 
-export function renderReport(container, ctx, snapshot, stats) {
+export function renderReport(container, ctx, snapshot, stats, opts = {}) {
   const brand = snapshot.label || t('app.title');
   const ppcMono = stats.policies_per_client?.mono_policy || [];
+  const ratioSeries = opts.ratioSeries || [{ stats, snapshot }];
 
   const pages = [
     page(1, snapshot, brand, page1(snapshot, stats.overview)),
@@ -727,7 +751,7 @@ export function renderReport(container, ctx, snapshot, stats) {
     page(7, snapshot, brand, page7(snapshot, stats.subscription, stats.overview.active_clients)),
     page(8, snapshot, brand, page8(snapshot, stats.policies_per_client, ppcMono)),
     page(9, snapshot, brand, page9(snapshot, stats.companies)),
-    page(10, snapshot, brand, page10(snapshot, stats)),
+    page(10, snapshot, brand, page10(snapshot, stats, ratioSeries, ctx?.locale)),
   ];
 
   mount(container, h('div', { class: 'rp-report' }, pages));
@@ -752,10 +776,12 @@ export function printReport(snapshot) {
   const html = document.documentElement;
   const prevTitle = document.title;
   if (snapshot) {
-    const label = String(snapshot.label || t('app.title')).replace(/[\\/:*?"<>|]/g, '_');
+    // Use only the snapshot date in the default save-as name. The label is a
+    // broker-chosen string (e.g. "Dossche") that shouldn't leak into shared
+    // PDF filenames.
     const iso = isoDay(snapshot.snapshot_date);
     const base = t('report.title') || 'Portfolio report';
-    document.title = iso ? `${base} ${label} ${iso}` : `${base} ${label}`;
+    document.title = iso ? `${base} ${iso}` : base;
   }
   html.setAttribute('data-print-mode', 'report');
   requestAnimationFrame(() => {

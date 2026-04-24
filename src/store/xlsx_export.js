@@ -221,11 +221,12 @@ export function buildOppFilename(title, date) {
   return iso ? `${safe} ${iso}.xlsx` : `${safe}.xlsx`;
 }
 
-// Build "CLIENT TOTAL {label} {YYYY-MM-DD}.xlsx" — the YYYY-MM-DD is the
-// snapshot date, matching the broker's naming convention but with a full
-// day-precision anchor instead of the legacy MM.YYYY.
-export function buildClientTotalFilename(label, date) {
+// Build "CLIENT TOTAL {YYYY-MM-DD}.xlsx" — the YYYY-MM-DD is the snapshot
+// date. We intentionally omit the snapshot label: it used to carry the
+// broker's own portfolio name (e.g. "Dossche") which isn't useful to the
+// downstream consumer and leaked a client-identifying string into files
+// brokers share around.
+export function buildClientTotalFilename(date) {
   const iso = formatIsoDay(date);
-  const safe = String(label || 'Portfolio').replace(/[\\/:*?"<>|]/g, '_');
-  return iso ? `CLIENT TOTAL ${safe} ${iso}.xlsx` : `CLIENT TOTAL ${safe}.xlsx`;
+  return iso ? `CLIENT TOTAL ${iso}.xlsx` : `CLIENT TOTAL.xlsx`;
 }

@@ -115,7 +115,10 @@ function simpleTable(columns, rows) {
   // on narrow viewports where the table is wider than the card.
   return h('div', { class: 'table-wrap' }, h('table', { class: 'dash-table' }, [
     h('thead', {}, h('tr', {}, columns.map((c) =>
-      h('th', { class: c.align ? `a-${c.align}` : null }, c.label)))),
+      h('th', {
+        class: c.align ? `a-${c.align}` : null,
+        style: c.style || null,
+      }, c.label)))),
     h('tbody', {}, rows.map((r) => {
       const cls = [];
       if (r.emphasize) cls.push('emphasize');
@@ -308,6 +311,39 @@ export function renderDashboard(root, ctx, args) {
   const kpiS = stats.kpi_summary;
   const ov = stats.overview;
 
+  // ---- Historical snapshots for the ratios comparison column --------------
+  //
+  // The 2022-onwards reference rapport adds two prior-year columns to the
+  // ratios summary (page 10). We mirror that by picking the two most recent
+  // snapshots dated strictly before the current one and computing their
+  // ratio stats. Ordered current → oldest so the broker reads left to right
+  // from "today" into history.
+  const ratioSeries = [{ stats, snapshot }];
+  try {
+    const allSnaps = ctx.db.listSnapshots() || [];
+    const priors = allSnaps
+      .filter((s) => s.id !== snapshotId && (s.snapshot_date || '') < (snapshot.snapshot_date || ''))
+      .sort((a, b) => (b.snapshot_date || '').localeCompare(a.snapshot_date || ''))
+      .slice(0, 2);
+    for (const p of priors) {
+      try {
+        const pc = ctx.db.fetchRows('clients', p.id);
+        const pp = ctx.db.fetchRows('polices', p.id);
+        const pcp = ctx.db.fetchRows('compagnies_polices', p.id);
+        const ps = ctx.db.fetchRows('sinistres', p.id);
+        const py = Number((p.snapshot_date || '').slice(0, 4)) || new Date().getFullYear();
+        const pStats = computeAllStats(pc, pp, pcp, ps, py, ctx.branchIndex);
+        ratioSeries.push({ stats: pStats, snapshot: p });
+      } catch (err) {
+        // One broken prior snapshot shouldn't hide the current dashboard —
+        // silently drop it from the comparison and keep going.
+        console.warn('[dashboard] skipping prior snapshot', p.id, err);
+      }
+    }
+  } catch (err) {
+    console.warn('[dashboard] could not load prior snapshots', err);
+  }
+
   // ---- Export handlers -----------------------------------------------------
 
   async function handleExportXlsx() {
@@ -319,7 +355,7 @@ export function renderDashboard(root, ctx, args) {
         year: d.year,
         branchCodes: ctx.branchIndex?.codes || [],
       });
-      const filename = buildClientTotalFilename(snapshot.label, snapshot.snapshot_date);
+      const filename = buildClientTotalFilename(snapshot.snapshot_date);
       downloadBlob(blob, filename);
       toast(t('dashboard.export_xlsx_done'), 'success');
     } catch (e) {
@@ -336,7 +372,7 @@ export function renderDashboard(root, ctx, args) {
         host.id = 'report-print';
         document.body.appendChild(host);
       }
-      renderReport(host, ctx, snapshot, stats);
+      renderReport(host, ctx, snapshot, stats, { ratioSeries });
       printReport(snapshot);
     } catch (e) {
       console.error(e);
@@ -1064,22 +1100,37 @@ export function renderDashboard(root, ctx, args) {
   // PDF. Built from the shared buildRatiosSummary() helper so both surfaces
   // stay in lockstep.
 
-  const { rows: ratioRows } = buildRatiosSummary(stats);
+  const { rows: ratioRows, columns: ratioColumns } = buildRatiosSummary(ratioSeries, { locale: ctx.locale });
   // Ménages summary boxes are already shown in the hero summaryGrid at the
   // top of the dashboard, so we skip them here and surface only the long
   // ratios table. For the polices-p / polices-e rows we want the count and
   // the % visually separated (same treatment as the print report, .rp-val-pct
   // is a shared inline-flex helper).
-  const ratioValueCell = (r) => {
-    if (r.pct == null) return { text: r.value, align: 'right' };
+  //
+  // Multi-period layout: one column per snapshot in ratioSeries (current +
+  // up to 2 historical). The "current" column is tinted so the eye lands on
+  // today's portfolio before drifting into the comparison.
+  const ratioValueCell = (v, isCurrent) => {
+    const inner = (v.pct != null)
+      ? h('span', { class: 'rp-val-pct' }, [
+          h('span', { class: 'rp-val' }, v.value),
+          h('span', { class: 'rp-pct' }, v.pct),
+        ])
+      : v.value;
     return {
-      text: h('span', { class: 'rp-val-pct' }, [
-        h('span', { class: 'rp-val' }, r.value),
-        h('span', { class: 'rp-pct' }, r.pct),
-      ]),
+      text: inner,
       align: 'right',
+      style: isCurrent ? 'background:color-mix(in srgb, var(--warning) 14%, transparent);font-weight:600;' : null,
     };
   };
+  const ratioColumnsConfig = [
+    { label: t('report.ratio.column') },
+    ...ratioColumns.map((c) => ({
+      label: c.label,
+      align: 'right',
+      style: c.isCurrent ? 'background:color-mix(in srgb, var(--warning) 24%, transparent);color:var(--text);font-weight:700;' : null,
+    })),
+  ];
   const sec5 = section({
     number: 5, title: t('report.s6_title'),
     tint: '--teal', iconName: 'chart.bar',
@@ -1088,11 +1139,13 @@ export function renderDashboard(root, ctx, args) {
     card([
       cardHead(t('report.s6_title'), t('report.s6_info')),
       simpleTable(
-        [{ label: t('report.ratio.column') },
-         { label: t('report.ratio.global'), align: 'right' }],
+        ratioColumnsConfig,
         ratioRows.map((r) => ({
           key: `ratio:${r.key}`,
-          cells: [r.label, ratioValueCell(r)],
+          cells: [
+            r.label,
+            ...r.values.map((v, i) => ratioValueCell(v, ratioColumns[i]?.isCurrent)),
+          ],
         }))
       ),
     ]),
@@ -1244,10 +1297,9 @@ function showOppDetail(title, items, renderer, opts = {}) {
         rows,
         sheetName: title,
       });
-      const filename = buildOppFilename(
-        `${title}${snapshot?.label ? ' ' + snapshot.label : ''}`,
-        snapshot?.snapshot_date,
-      );
+      // Omit snapshot.label (broker's own portfolio name) from the filename
+      // so shared exports don't carry client-identifying strings like "Dossche".
+      const filename = buildOppFilename(title, snapshot?.snapshot_date);
       downloadBlob(blob, filename);
       toast(t('dashboard.export_xlsx_done'), 'success');
     } catch (err) {

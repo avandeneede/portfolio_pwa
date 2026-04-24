@@ -1429,6 +1429,24 @@ button { font-family: inherit; }
 .rp-table.tone-red th { background: #f8cbad; }
 .rp-table.tone-blue th { background: #b4c7e7; }
 
+/* Current-snapshot column on the ratios summary (page 10). The reference
+ * rapport paints this column yellow so the eye lands on "today" before
+ * drifting into the comparison years. Keep the tint soft enough that the
+ * per-row emphasize/subtle/total backgrounds still read on top. */
+.rp-table th.is-current {
+  background: #ffd966;
+  color: #000;
+}
+.rp-table td.is-current {
+  background: #fff2cc;
+  font-weight: 600;
+}
+.rp-table tr.row-total td.is-current,
+.rp-table tr.emphasize td.is-current,
+.rp-table tr.row-subtle td.is-current {
+  background: #ffe699;
+}
+
 /* Count + % displayed in the same right-aligned cell (ratios page).
  * Two tabular-numeric spans with a generous gap so the two figures don't
  * read as a single run-on number. The inner spans are fixed-width so that
