@@ -7,14 +7,34 @@ import { backendName, clear as clearLocal } from '../store/local.js';
 import { Database } from '../store/db.js';
 import { exportEncrypted, importEncrypted, buildFilename, downloadBlob } from '../store/backup.js';
 import { loadProfile, saveProfile } from '../store/profile.js';
-import { getSyncHandle, setSyncHandle, clearSyncHandle, writeToSync, isSyncSupported } from '../store/cloud_sync.js';
+import {
+  getSyncHandle, setSyncHandle, clearSyncHandle, writeToSync, isSyncSupported,
+  isShareSyncSupported, shareEncryptedBackup,
+} from '../store/cloud_sync.js';
 import { icon, iconTile } from '../ui/icon.js';
+import { askPassphraseModal } from '../ui/passphrase_modal.js';
 
-function askPassphrase(message) {
-  const v = window.prompt(message);
-  if (v == null) return null;
-  const trimmed = v.trim();
-  return trimmed.length === 0 ? null : trimmed;
+// Ask the user to set a new passphrase (with confirmation). Returns the
+// passphrase or null if cancelled. The modal uses a real <form> with
+// autocomplete="new-password" so iOS Passwords / Apple Keychain /
+// 1Password can offer to save the entry.
+function askSetPassphrase(message) {
+  return askPassphraseModal({
+    mode: 'set',
+    title: t('settings.passphrase.set_title'),
+    message: message || t('settings.passphrase.hint'),
+  });
+}
+
+// Ask the user for an existing passphrase. Returns the passphrase or null
+// if cancelled. Uses autocomplete="current-password" to surface saved
+// credentials from the browser/device password manager.
+function askGetPassphrase(message) {
+  return askPassphraseModal({
+    mode: 'get',
+    title: t('settings.passphrase.get_title'),
+    message: message || t('settings.backup.passphrase_prompt'),
+  });
 }
 
 // A labelled text input row used inside the profile groups. Writes to the
@@ -73,14 +93,9 @@ export function renderSettings(root, ctx) {
     // is NO — a fresh device shouldn't inherit another user's identity without
     // an explicit opt-in.
     const includeProfile = window.confirm(t('settings.backup.include_profile_prompt'));
-    const pass = askPassphrase(t('settings.passphrase.hint') + '\n\n' + t('settings.passphrase.set'));
+    const pass = await askSetPassphrase();
     if (!pass) {
-      toast(t('error.crypto.no_passphrase'), 'danger');
-      return;
-    }
-    const confirm = askPassphrase(t('settings.passphrase.confirm'));
-    if (confirm !== pass) {
-      toast(t('settings.passphrase.mismatch'), 'danger');
+      // Cancelled or empty — stay silent, the user knows they dismissed.
       return;
     }
     state.busy = true;
@@ -108,11 +123,8 @@ export function renderSettings(root, ctx) {
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
-      const pass = askPassphrase(t('settings.backup.passphrase_prompt'));
-      if (!pass) {
-        toast(t('error.crypto.no_passphrase'), 'danger');
-        return;
-      }
+      const pass = await askGetPassphrase();
+      if (!pass) return;
       state.busy = true;
       try {
         const buf = new Uint8Array(await file.arrayBuffer());
@@ -148,16 +160,8 @@ export function renderSettings(root, ctx) {
   // hidden via the feature check below.
   async function handleSyncPick() {
     if (state.busy) return;
-    const pass = askPassphrase(t('settings.passphrase.hint') + '\n\n' + t('settings.passphrase.set'));
-    if (!pass) {
-      toast(t('error.crypto.no_passphrase'), 'danger');
-      return;
-    }
-    const confirm = askPassphrase(t('settings.passphrase.confirm'));
-    if (confirm !== pass) {
-      toast(t('settings.passphrase.mismatch'), 'danger');
-      return;
-    }
+    const pass = await askSetPassphrase();
+    if (!pass) return;
     try {
       const latest = ctx.db.listSnapshots()[0];
       const suggested = latest
@@ -188,6 +192,39 @@ export function renderSettings(root, ctx) {
     await clearSyncHandle();
     toast(t('settings.sync.unlinked'), 'success');
     ctx.render(renderSettings);
+  }
+
+  // Safari/iOS path: the File System Access API isn't available, so there's no
+  // way to persistently write to a file. Instead we package the current DB as
+  // a .ptf and hand it to the iOS share sheet, where the user taps "Save to
+  // Files" → iCloud Drive. On the other device they use the existing Import
+  // button to pull the same file back. Manual, but it works over iCloud.
+  async function handleShareToCloud() {
+    if (state.busy) return;
+    const snapshots = ctx.db.listSnapshots();
+    if (snapshots.length === 0) {
+      toast(t('settings.backup.no_snapshots'), 'warning');
+      return;
+    }
+    const includeProfile = window.confirm(t('settings.backup.include_profile_prompt'));
+    const pass = await askSetPassphrase();
+    if (!pass) return;
+    state.busy = true;
+    try {
+      const dbBytes = ctx.db.export();
+      const profile = includeProfile ? loadProfile() : null;
+      const latest = snapshots[0];
+      const filename = buildFilename(latest.label, new Date(latest.snapshot_date));
+      const shared = await shareEncryptedBackup(dbBytes, pass, { profile, filename });
+      if (shared) {
+        toast(t('settings.sync.shared') || t('settings.backup.export_done'), 'success');
+      }
+    } catch (e) {
+      console.error(e);
+      toast(t('error.generic') + ' ' + e.message, 'danger');
+    } finally {
+      state.busy = false;
+    }
   }
 
   // Full reset: wipe user data AND the PWA's cached code/assets + service
@@ -431,9 +468,16 @@ export function renderSettings(root, ctx) {
       ]),
     ]),
 
-    // Cloud sync section. Hidden entirely on browsers without the File System
-    // Access API (Safari/Firefox today) — we have no way to pick a file handle
-    // there, so offering the feature would be false advertising.
+    // Cloud sync section.
+    //
+    // Two flavours depending on what the browser supports:
+    //   - Chromium (File System Access API): persistent file handle, auto-write
+    //     after every save. Seamless.
+    //   - iOS Safari (Web Share with files): manual "Share to iCloud" button
+    //     that packages the backup and routes it through the iOS share sheet
+    //     → "Save to Files" → iCloud Drive. Pull is via the regular Import
+    //     button.
+    // If neither is available (desktop Firefox, etc.), the section is hidden.
     isSyncSupported() ? h('div', { class: 'section-head' },
       h('span', {}, t('settings.sync.title'))) : null,
     isSyncSupported() ? h('div', { class: 'group' }, [
@@ -457,6 +501,36 @@ export function renderSettings(root, ctx) {
         iconTile('trash', '--muted'),
         h('div', { class: 'row-main' }, [
           h('div', { class: 'row-title' }, t('settings.sync.unlink')),
+        ]),
+        h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
+      ]),
+    ]) : null,
+
+    // Safari / iOS: manual iCloud share path. Only shown when FSA is NOT
+    // available but Web Share with files IS (so we don't duplicate on Chromium).
+    (!isSyncSupported() && isShareSyncSupported()) ? h('div', { class: 'section-head' },
+      h('span', {}, t('settings.sync.title'))) : null,
+    (!isSyncSupported() && isShareSyncSupported()) ? h('div', { class: 'group' }, [
+      h('div', { class: 'row disclaimer' }, [
+        iconTile('info.circle', '--teal'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.sync.share_title')),
+          h('div', { class: 'row-sub' }, t('settings.sync.share_hint')),
+        ]),
+      ]),
+      h('div', { class: 'row interactive', onClick: handleShareToCloud }, [
+        iconTile('square.and.arrow.up', '--indigo'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.sync.share_to_icloud')),
+          h('div', { class: 'row-sub' }, t('settings.sync.share_to_icloud_hint')),
+        ]),
+        h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
+      ]),
+      h('div', { class: 'row interactive', onClick: handleImport }, [
+        iconTile('tray.and.arrow.down', '--teal'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.sync.pull_from_icloud')),
+          h('div', { class: 'row-sub' }, t('settings.sync.pull_from_icloud_hint')),
         ]),
         h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
       ]),

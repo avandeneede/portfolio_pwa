@@ -25,8 +25,50 @@ const IDB_NAME = 'portefeuille-sync';
 const IDB_STORE = 'sync';
 const IDB_KEY = 'active';
 
+// Full File System Access API: Chromium only. Unlocks live auto-sync:
+// after every local DB save we also write the same encrypted blob to the
+// picked file, so iCloud/OneDrive/Dropbox can propagate it automatically.
 export function isSyncSupported() {
   return typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
+}
+
+// Web Share API with file support: iOS Safari 15+, modern Android.
+// Lets the user hand the encrypted backup to the OS share sheet, which on
+// iOS includes "Save to Files" → iCloud Drive. Not as seamless as FSA
+// (the user must tap a button each time) but it covers the one gap iOS has.
+export function isShareSyncSupported() {
+  if (typeof navigator === 'undefined') return false;
+  if (typeof navigator.share !== 'function') return false;
+  if (typeof navigator.canShare !== 'function') return false;
+  try {
+    const probe = new File([new Uint8Array(1)], 'probe.ptf', { type: 'application/octet-stream' });
+    return navigator.canShare({ files: [probe] });
+  } catch (_) {
+    return false;
+  }
+}
+
+// Any sync path available? Used by the UI to decide whether to show the
+// cloud-sync section at all (Chromium or iOS Safari).
+export function isAnySyncSupported() {
+  return isSyncSupported() || isShareSyncSupported();
+}
+
+// Package the DB + optional profile as an encrypted .ptf blob and hand it
+// to the OS share sheet. On iOS the user picks "Save to Files" → iCloud
+// Drive, overwriting the previous copy. Returns true if the share resolved,
+// false if the user cancelled.
+export async function shareEncryptedBackup(dbBytes, passphrase, { profile = null, filename = 'portefeuille.ptf' } = {}) {
+  if (!isShareSyncSupported()) throw new Error('share-files-unsupported');
+  const payload = await exportEncrypted(dbBytes, passphrase, { profile });
+  const file = new File([payload], filename, { type: 'application/octet-stream' });
+  try {
+    await navigator.share({ files: [file], title: filename });
+    return true;
+  } catch (e) {
+    if (e && (e.name === 'AbortError' || e.name === 'NotAllowedError')) return false;
+    throw e;
+  }
 }
 
 function openIdb() {

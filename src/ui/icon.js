@@ -80,6 +80,16 @@ const PATHS = {
   'chevron.left': [{ d: 'M15 6l-6 6 6 6' }],
   'chevron.right': [{ d: 'M9 6l6 6-6 6' }],
   'chevron.down': [{ d: 'M6 9l6 6 6-6' }],
+  'line.horizontal.3': [
+    { d: 'M4 7h16M4 12h16M4 17h16' },
+  ],
+  'xmark': [
+    { d: 'M6 6l12 12M18 6L6 18' },
+  ],
+  'square.and.arrow.up': [
+    { d: 'M12 3v13M8 7l4-4 4 4' },
+    { d: 'M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7' },
+  ],
   'trash': [
     { d: 'M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6v14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6M10 11v6M14 11v6' },
   ],

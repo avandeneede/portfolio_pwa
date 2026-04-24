@@ -8,7 +8,7 @@
 //
 // Bump CACHE_VERSION on any release to force clients to re-fetch.
 
-const CACHE_VERSION = 'v27';
+const CACHE_VERSION = 'v28';
 const CACHE_NAME = `portefeuille-${CACHE_VERSION}`;
 
 const PRECACHE = [
@@ -25,6 +25,7 @@ const PRECACHE = [
   './src/ui/icon.js',
   './src/ui/shell.js',
   './src/ui/charts.js',
+  './src/ui/passphrase_modal.js',
   './src/store/db.js',
   './src/store/local.js',
   './src/store/crypto.js',

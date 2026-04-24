@@ -1,5 +1,6 @@
 /* Portefeuille — design primitives adapted from avandeneede/breakdown.
-   iOS-style light/dark. Desktop: sidebar + content. Mobile: top bar + content. */
+   iOS-style light/dark. Desktop: sidebar + content. Mobile: hamburger top
+   bar + slide-out drawer, so the content gets the full viewport width. */
 
 :root {
   color-scheme: light dark;
@@ -168,28 +169,128 @@ button { font-family: inherit; }
   padding: 28px 32px 56px;
 }
 
-/* Mobile: collapse sidebar into a top bar. */
+/* ------------------------------------------------------------------ *
+ * Mobile top bar + slide-out drawer
+ *
+ * Desktop: topbar/backdrop/close-button are hidden; the sidebar sits in
+ * its grid column. Mobile: the grid collapses, the topbar appears,
+ * and the sidebar turns into a fixed drawer that slides in from the left
+ * when .app.drawer-open is set.
+ * ------------------------------------------------------------------ */
+
+.mobile-topbar { display: none; }
+.drawer-backdrop { display: none; }
+.drawer-close { display: none; }
+
+/* Mobile: collapse sidebar into a drawer + top bar. */
 @media (max-width: 820px) {
-  .app { grid-template-columns: 1fr; }
-  .sidebar {
-    position: sticky; top: 0; z-index: 10;
-    height: auto;
-    flex-direction: row;
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  /* Top bar: sticky, blurred iOS-style chrome. */
+  .mobile-topbar {
+    display: flex;
     align-items: center;
-    padding: 10px 12px;
-    gap: 12px;
-    border-right: none;
+    gap: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding: max(env(safe-area-inset-top), 0px) 10px 8px;
+    padding-top: calc(8px + env(safe-area-inset-top));
+    background: color-mix(in srgb, var(--bg-elevated) 85%, transparent);
+    -webkit-backdrop-filter: saturate(180%) blur(14px);
+    backdrop-filter: saturate(180%) blur(14px);
     border-bottom: 0.5px solid var(--separator);
+    min-height: 52px;
   }
-  .app-brand { flex: 1; }
-  .side-nav {
-    flex-direction: row;
-    gap: 4px;
+  .topbar-hamburger,
+  .topbar-new {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    flex: 0 0 auto;
   }
-  .side-nav-item { padding: 8px 10px; }
-  .side-nav-label { display: none; }
-  .sidebar-footer { margin-top: 0; padding: 0; }
-  .content-inner { padding: 16px 16px 48px; }
+  .topbar-hamburger:active,
+  .topbar-new:active { background: var(--fill-2); }
+  .topbar-new { color: var(--accent); }
+  .topbar-brand {
+    flex: 1; min-width: 0;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .topbar-brand .brand-icon { width: 28px; height: 28px; border-radius: 7px; }
+  .topbar-brand .brand-icon-logo img { width: 28px; height: 28px; }
+  .topbar-title {
+    font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* Drawer (was the sidebar on desktop). */
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: min(86vw, 320px);
+    height: 100vh; height: 100dvh;
+    z-index: 50;
+    background: var(--bg-elevated);
+    border-right: 0.5px solid var(--separator);
+    box-shadow: 8px 0 28px rgba(0, 0, 0, 0.16);
+    padding: max(env(safe-area-inset-top), 12px) 12px max(env(safe-area-inset-bottom), 18px);
+    gap: 14px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    transform: translateX(-102%);
+    transition: transform .22s ease;
+    will-change: transform;
+  }
+  .app.drawer-open .sidebar { transform: translateX(0); }
+
+  .drawer-backdrop {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 40;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .22s ease;
+  }
+  .app.drawer-open .drawer-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .drawer-close {
+    display: inline-flex;
+    align-self: flex-end;
+    appearance: none;
+    background: var(--fill-2);
+    border: none;
+    color: var(--text);
+    width: 36px; height: 36px;
+    border-radius: 999px;
+    align-items: center; justify-content: center;
+    cursor: pointer;
+    margin-bottom: -4px;
+  }
+  .drawer-close:active { background: var(--fill); }
+
+  /* Content: tighter gutters, safe-area aware bottom. */
+  .content-inner {
+    padding: 16px 14px max(24px, env(safe-area-inset-bottom));
+  }
+
+  /* Sidebar footer stays vertical inside the drawer. */
+  .sidebar-footer { margin-top: auto; padding: 4px 8px; }
+
+  /* Tap targets: 44px minimum on interactive side-nav items. */
+  .side-nav-item { padding: 12px 12px; }
+  .side-cta { padding: 12px 14px; }
 }
 
 /* ------------------------------------------------------------------ *
@@ -1753,15 +1854,28 @@ button { font-family: inherit; }
  * Mobile polish
  * ------------------------------------------------------------------ */
 @media (max-width: 720px) {
-  /* Tables inside dashboard cards can be wider than the viewport. Allow the
-   * section body to scroll horizontally and hint a reasonable min-width on
-   * the table so it doesn't squish into unreadable column widths. */
-  .dash-section-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .dash-table { min-width: 480px; }
+  /* Tables inside dashboard cards can be wider than the viewport. Scroll at
+   * the card level (not the section) so each table gets its own horizontal
+   * scroller while keeping the card's rounded corners and padding intact.
+   * The inner table uses display:block + overflow-x:auto so the thead/tbody
+   * scroll together. */
+  .dash-card {
+    padding: 14px 14px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .dash-table { min-width: max-content; font-size: 13px; }
+  .dash-table th, .dash-table td { padding: 6px 6px; }
+  /* Cards that hold charts should never scroll horizontally themselves. */
+  .dash-card.card-chart { overflow-x: visible; }
 
   /* Page header: subtitle under title, actions wrap below. */
   .page-head { gap: 8px; }
   .page-head .page-title { font-size: 24px; }
+
+  /* Hero / KPI grid: single column, tighter spacing. */
+  .hero { padding: 18px 16px; border-radius: 14px; }
+  .dash-section { margin-bottom: 32px; }
 
   /* Tighter padding in tutorial on narrow screens. */
   .tutorial-summary { padding: 12px 14px; }
@@ -1770,4 +1884,100 @@ button { font-family: inherit; }
   /* Disclaimer rows: keep icon tile and text on separate lines. */
   .row.disclaimer { flex-direction: column; gap: 8px; }
   .row.disclaimer .row-main { padding-left: 0; }
+}
+
+/* ------------------------------------------------------------------ *
+ * Passphrase modal
+ * ------------------------------------------------------------------ */
+.pp-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.pp-form {
+  background: var(--bg-elevated);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.pp-header {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 18px 20px 6px;
+}
+.pp-icon {
+  width: 36px; height: 36px;
+  border-radius: 9px;
+  background: var(--accent);
+  display: grid; place-items: center;
+  flex: 0 0 auto;
+}
+.pp-titles { flex: 1; min-width: 0; }
+.pp-title {
+  font-size: 17px; font-weight: 700; letter-spacing: -0.01em;
+  color: var(--text);
+}
+.pp-message {
+  font-size: 13px; color: var(--text-2);
+  margin-top: 4px; line-height: 1.4;
+}
+.pp-body {
+  padding: 14px 20px 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.pp-input {
+  font: inherit;
+  font-size: 16px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--separator);
+  background: var(--card);
+  color: var(--text);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.pp-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.pp-error {
+  font-size: 13px;
+  color: var(--danger);
+  min-height: 18px;
+  margin-top: -2px;
+}
+.pp-footer {
+  display: flex; gap: 8px; justify-content: flex-end;
+  padding: 14px 20px 18px;
+}
+.pp-btn {
+  appearance: none;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  min-height: 40px;
+}
+.pp-btn-cancel { background: var(--fill-2); color: var(--text); }
+.pp-btn-cancel:hover { background: var(--fill); }
+.pp-btn-primary { background: var(--accent); color: #fff; }
+.pp-btn-primary:hover { filter: brightness(1.05); }
+
+/* iOS-native tap feedback + minimum targets across the app. */
+@media (max-width: 820px) {
+  button, .side-nav-item, .side-cta, .side-snapshot {
+    min-height: 44px;
+  }
+  /* Prevent iOS from auto-zooming into inputs with <16px text. */
+  input, select, textarea { font-size: 16px; }
 }
