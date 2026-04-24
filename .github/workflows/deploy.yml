@@ -65,6 +65,10 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        with:
+          # Enable Pages via API on first run so the deploy doesn't fail with
+          # "Pages not configured". Safe to leave on: no-op after enablement.
+          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
