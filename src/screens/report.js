@@ -733,12 +733,36 @@ export function renderReport(container, ctx, snapshot, stats) {
   mount(container, h('div', { class: 'rp-report' }, pages));
 }
 
-// Trigger the browser print dialog with the report visible.
-export function printReport() {
+// Format a date as YYYY-MM-DD for filename use. Mirrors formatIsoDay in
+// xlsx_export.js but kept local to avoid a circular import.
+function isoDay(date) {
+  const d = date instanceof Date ? date : new Date(date || Date.now());
+  if (Number.isNaN(d.valueOf())) return '';
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Trigger the browser print dialog with the report visible. Optionally takes
+// the snapshot so we can override document.title — browsers use that as the
+// default "Save as PDF" filename, which is the only portable handle we have
+// into the print dialog. Title is restored after the print dialog settles.
+export function printReport(snapshot) {
   const html = document.documentElement;
+  const prevTitle = document.title;
+  if (snapshot) {
+    const label = String(snapshot.label || t('app.title')).replace(/[\\/:*?"<>|]/g, '_');
+    const iso = isoDay(snapshot.snapshot_date);
+    const base = t('report.title') || 'Portfolio report';
+    document.title = iso ? `${base} ${label} ${iso}` : `${base} ${label}`;
+  }
   html.setAttribute('data-print-mode', 'report');
   requestAnimationFrame(() => {
     window.print();
-    setTimeout(() => html.removeAttribute('data-print-mode'), 500);
+    setTimeout(() => {
+      html.removeAttribute('data-print-mode');
+      if (snapshot) document.title = prevTitle;
+    }, 500);
   });
 }

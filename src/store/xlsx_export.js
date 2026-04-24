@@ -200,21 +200,32 @@ export async function exportOppXlsx(ctx, { header, rows, sheetName }) {
   });
 }
 
-// Build a safe xlsx filename from a title + date. Strips Windows-forbidden
-// characters and appends MM.YYYY like the legacy exporter.
-export function buildOppFilename(title, date) {
+// Format a date as a filename-safe ISO day (YYYY-MM-DD). Anchors every
+// export to the exact snapshot it was generated from so the broker can
+// tell two exports of the same portfolio apart when dated weeks apart.
+function formatIsoDay(date) {
   const d = date instanceof Date ? date : new Date(date || Date.now());
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  if (Number.isNaN(d.valueOf())) return '';
   const yyyy = d.getUTCFullYear();
-  const safe = String(title || 'Export').replace(/[\\/:*?"<>|]/g, '_');
-  return `${safe} ${mm}.${yyyy}.xlsx`;
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
-// Build "CLIENT TOTAL {label} {MM.YYYY}.xlsx" like the sample file.
+// Build a safe xlsx filename from a title + snapshot date. Strips
+// Windows-forbidden characters and appends the full YYYY-MM-DD of the
+// underlying snapshot so exports stay pinned to their source data.
+export function buildOppFilename(title, date) {
+  const iso = formatIsoDay(date);
+  const safe = String(title || 'Export').replace(/[\\/:*?"<>|]/g, '_');
+  return iso ? `${safe} ${iso}.xlsx` : `${safe}.xlsx`;
+}
+
+// Build "CLIENT TOTAL {label} {YYYY-MM-DD}.xlsx" — the YYYY-MM-DD is the
+// snapshot date, matching the broker's naming convention but with a full
+// day-precision anchor instead of the legacy MM.YYYY.
 export function buildClientTotalFilename(label, date) {
-  const d = date instanceof Date ? date : new Date(date);
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const yyyy = d.getUTCFullYear();
+  const iso = formatIsoDay(date);
   const safe = String(label || 'Portfolio').replace(/[\\/:*?"<>|]/g, '_');
-  return `CLIENT TOTAL ${safe} ${mm}.${yyyy}.xlsx`;
+  return iso ? `CLIENT TOTAL ${safe} ${iso}.xlsx` : `CLIENT TOTAL ${safe}.xlsx`;
 }

@@ -24,20 +24,55 @@ function excelSerialToISO(serial) {
   return d.toISOString().slice(0, 10);
 }
 
+// Validate a YYYY-MM-DD triple. Rejects impossible dates like 20210230 by
+// round-tripping through Date.UTC.
+function validYmd(y, m, d) {
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
 function parseDate(v) {
   if (v == null || v === '') return null;
   if (v instanceof Date) {
     if (Number.isNaN(v.valueOf())) return null;
     return v.toISOString().slice(0, 10);
   }
-  if (typeof v === 'number') return excelSerialToISO(v);
+  if (typeof v === 'number') {
+    // Some broker exports ship birthdates as compact YYYYMMDD integers
+    // (e.g. 19920410) instead of Excel date serials. Integers in the
+    // 8-digit calendar range are always YYYYMMDD — Excel serials for real
+    // dates stay well below 100k, so there's no collision. Return null on
+    // an invalid calendar date instead of falling through to the serial
+    // epoch, which would spit out a nonsense date in the year 5xxxx.
+    if (Number.isInteger(v) && v >= 10000101 && v <= 99991231) {
+      const y = Math.floor(v / 10000);
+      const m = Math.floor((v % 10000) / 100);
+      const d = v % 100;
+      return validYmd(y, m, d);
+    }
+    return excelSerialToISO(v);
+  }
   const s = String(v).trim();
-  // ISO
-  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  // Compact YYYYMMDD (no separators) — seen in Portima-style client exports.
+  const ymd = /^(\d{4})(\d{2})(\d{2})$/.exec(s);
+  if (ymd) {
+    const iso = validYmd(Number(ymd[1]), Number(ymd[2]), Number(ymd[3]));
+    if (iso) return iso;
+  }
+  // ISO or YYYY/MM/DD / YYYY.MM.DD
+  const iso = /^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/.exec(s);
+  if (iso) {
+    const out = validYmd(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+    if (out) return out;
+  }
   // DD/MM/YYYY
   const fr = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/.exec(s);
-  if (fr) return `${fr[3]}-${fr[2].padStart(2, '0')}-${fr[1].padStart(2, '0')}`;
+  if (fr) {
+    const out = validYmd(Number(fr[3]), Number(fr[2]), Number(fr[1]));
+    if (out) return out;
+  }
   // Fallback
   const d = new Date(s);
   if (!Number.isNaN(d.valueOf())) return d.toISOString().slice(0, 10);

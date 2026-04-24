@@ -337,7 +337,7 @@ export function renderDashboard(root, ctx, args) {
         document.body.appendChild(host);
       }
       renderReport(host, ctx, snapshot, stats);
-      printReport();
+      printReport(snapshot);
     } catch (e) {
       console.error(e);
       toast(t('error.generic') + ' ' + e.message, 'danger');
