@@ -113,6 +113,17 @@ function ageBracketLabel(label) {
   return `${lo} à ${hi} ans`;
 }
 
+// Render a count + its % share in the same right-aligned cell with clear
+// visual separation between them. Used on the ratios page for the
+// "Polices Particuliers / Entreprises" rows, where packing "12345 67,89 %"
+// as plain text with two spaces made the two numbers read as one.
+function ratioValueWithPct(count, pct) {
+  return h('span', { class: 'rp-val-pct' }, [
+    h('span', { class: 'rp-val' }, formatInt(count)),
+    h('span', { class: 'rp-pct' }, formatPercent(pct, 2)),
+  ]);
+}
+
 // --- Pages -------------------------------------------------------------------
 
 function page1(s, ov) {
@@ -267,18 +278,20 @@ function page3(s, demo, kpi) {
   const totalP = demo.total || 0;
   const knownPct = totalP ? (known / totalP * 100) : 0;
   const unknownPct = totalP ? (unknown.count / totalP * 100) : 0;
-  const malePctTotal = totalP ? (male.count / totalP * 100) : 0;
-  const femalePctTotal = totalP ? (female.count / totalP * 100) : 0;
+  // M/F rows: % of known (matches the dashboard and the reference rapport).
+  // Known / Inconnu / Total rows stay on total as a coverage indicator.
+  const malePctKnown = known ? (male.count / known * 100) : 0;
+  const femalePctKnown = known ? (female.count / known * 100) : 0;
   const maleSym = t('report.gender_male_symbol');
   const femaleSym = t('report.gender_female_symbol');
 
   const sexTable = table([
     { cells: [`${maleSym}  ${t('demo.male')}`,
       { text: formatInt(male.count), align: 'right' },
-      { text: formatPercent(malePctTotal, 2), align: 'right' }] },
+      { text: formatPercent(malePctKnown, 2), align: 'right' }] },
     { cells: [`${femaleSym}  ${t('demo.female')}`,
       { text: formatInt(female.count), align: 'right' },
-      { text: formatPercent(femalePctTotal, 2), align: 'right' }] },
+      { text: formatPercent(femalePctKnown, 2), align: 'right' }] },
     { subtle: true, cells: [t('report.known'),
       { text: formatInt(known), align: 'right' },
       { text: formatPercent(knownPct, 2), align: 'right' }] },
@@ -319,8 +332,12 @@ function page3(s, demo, kpi) {
 
   const ageRows = (demo.age_brackets || []).map((b) => {
     const emphasize = (b.label === '60-69' || b.label === '70-+');
-    const pctClients = totalP ? (b.client_count / totalP * 100) : 0;
-    const pctPol = totalPolicesP ? (b.policy_count / totalPolicesP * 100) : 0;
+    // Bracket % = share of the *known* population (matches the dashboard and
+    // the reference rapport). Coverage % lives in the Connu / Inconnu rows
+    // below. Using totalP here would understate every bracket by the
+    // proportion of clients without a date of birth.
+    const pctClients = knownAge ? (b.client_count / knownAge * 100) : 0;
+    const pctPol = knownPolicies ? (b.policy_count / knownPolicies * 100) : 0;
     return { emphasize, cells: [
       { text: ageBracketLabel(b.label), align: 'left' },
       { text: formatInt(b.client_count), align: 'right' },
@@ -373,12 +390,14 @@ function page4(s, civil) {
     const pctKnown = totalP ? (knownCount / totalP * 100) : 0;
     const pctUnknown = totalP ? (unknownCount / totalP * 100) : 0;
 
+    // Row % = share of known (same rule as the dashboard). Connu / Inconnu
+    // summary rows still report % of total so readers see the coverage rate.
     const tableRows = knownRows.map((r) => {
-      const pctOfTotal = totalP ? (r.count / totalP * 100) : 0;
+      const pctOfKnown = knownCount ? (r.count / knownCount * 100) : 0;
       return { cells: [
         r.label,
         { text: formatInt(r.count), align: 'right' },
-        { text: formatPercent(pctOfTotal, 2), align: 'right' },
+        { text: formatPercent(pctOfKnown, 2), align: 'right' },
       ] };
     });
     const tbl = table([
@@ -397,7 +416,7 @@ function page4(s, civil) {
       knownRows.slice(0, 9).map((r) => ({
         label: r.label,
         value: r.count,
-        valueLabel: formatPercent(totalP ? (r.count / totalP * 100) : 0, 1),
+        valueLabel: formatPercent(knownCount ? (r.count / knownCount * 100) : 0, 1),
         color,
       })),
       { width: 360, rowHeight: 18, gap: 4, labelWidth: 140 }
@@ -419,10 +438,11 @@ function page4(s, civil) {
   ];
 }
 
-// Palette for data-quality bars. We tint each row's background with the same
-// hue as its bar so critical fields (>50% missing, plus email + phone) visually
-// pop on both the chart and the table.
-const DQ_PALETTE = ['--danger', '--warning', '--pink', '--purple', '--indigo', '--teal', '--accent'];
+// Data-quality coloring mirrors the dashboard: binary red/orange so the PDF
+// and the on-screen view read the same way. Red = critical (contact fields
+// that block outreach, or any field with >50% missing); orange = everything
+// else. The shared hex map below is still used to tint row backgrounds and
+// label text in the print tree (where we can't resolve CSS vars).
 const CRITICAL_CONTACT_KEYS = new Set(['email', 'telephone', 'phone']);
 
 function hexFromVar(cssVar) {
@@ -444,17 +464,22 @@ function hexFromVar(cssVar) {
 function page5(s, dq) {
   const fields = (dq.fields || []).slice().sort((a, b) => b.pct_missing - a.pct_missing);
 
-  const rowsWithColor = fields.map((f, i) => {
+  // Same rule as the dashboard: contact fields (email/phone) are always
+  // critical; everything else is only critical once it crosses the 50%
+  // missing threshold already flagged by the analyzer.
+  const rowsWithColor = fields.map((f) => {
     const isContact = CRITICAL_CONTACT_KEYS.has(f.key);
     const critical = f.critical || isContact;
-    const color = critical ? '--danger' : DQ_PALETTE[(i + 1) % DQ_PALETTE.length];
+    const color = critical ? '--danger' : '--warning';
     return { ...f, color, critical };
   });
 
   const tableRows = rowsWithColor.map((f) => {
     const tint = hexFromVar(f.color);
     return {
-      style: `background: ${tint}22;`,
+      // Soft row tint only on critical rows, so non-critical fields don't
+      // turn the whole table orange. Matches the dashboard's visual weight.
+      style: f.critical ? `background: ${tint}22;` : null,
       cells: [
         { text: f.label, align: 'left', style: `color: ${tint}; font-weight: 600;` },
         { text: formatPercent(f.pct_missing, 2), align: 'right', style: f.critical ? `color: ${tint}; font-weight: 700;` : null },
@@ -724,8 +749,8 @@ function page10(s, stats) {
     { cells: [t('report.ratio.pct_bi'), { text: formatPercent(pct_bi, 2), align: 'right' }] },
     { cells: [t('report.ratio.pct_5plus'), { text: formatPercent(pct_5plus, 2), align: 'right' }] },
     { cells: [t('report.ratio.total_policies'), { text: formatInt(kpi.total_polices), align: 'right' }] },
-    { cells: [t('report.ratio.polices_p'), { text: `${formatInt(kpi.polices_particuliers || 0)}  ${formatPercent(pct_polices_p, 2)}`, align: 'right' }] },
-    { cells: [t('report.ratio.polices_e'), { text: `${formatInt(kpi.polices_entreprises || 0)}  ${formatPercent(pct_polices_e, 2)}`, align: 'right' }] },
+    { cells: [t('report.ratio.polices_p'), { text: ratioValueWithPct(kpi.polices_particuliers || 0, pct_polices_p), align: 'right' }] },
+    { cells: [t('report.ratio.polices_e'), { text: ratioValueWithPct(kpi.polices_entreprises || 0, pct_polices_e), align: 'right' }] },
     { cells: [t('report.ratio.avg_policies_per_client'), { text: formatDecimal(kpi.avg_polices_per_client || 0, 2), align: 'right' }] },
     { cells: [t('report.ratio.avg_polices_p'), { text: formatDecimal(kpi.avg_polices_per_client_p || 0, 2), align: 'right' }] },
     { cells: [t('report.ratio.avg_polices_e'), { text: formatDecimal(kpi.avg_polices_per_client_e || 0, 2), align: 'right' }] },

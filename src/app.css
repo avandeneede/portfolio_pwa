@@ -1429,6 +1429,19 @@ button { font-family: inherit; }
 .rp-table.tone-red th { background: #f8cbad; }
 .rp-table.tone-blue th { background: #b4c7e7; }
 
+/* Count + % displayed in the same right-aligned cell (ratios page).
+ * Two tabular-numeric spans with a generous gap so the two figures don't
+ * read as a single run-on number. The inner spans are fixed-width so that
+ * "Polices P" and "Polices E" line up column-wise with each other. */
+.rp-val-pct {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.rp-val-pct .rp-val { min-width: 56px; text-align: right; }
+.rp-val-pct .rp-pct { min-width: 64px; text-align: right; color: #555; }
+
 /* Info text block under a sub-title. */
 .rp-info {
   font-size: 11px; color: #555; line-height: 1.45;

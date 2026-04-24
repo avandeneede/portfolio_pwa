@@ -8,7 +8,7 @@
 //
 // Bump CACHE_VERSION on any release to force clients to re-fetch.
 
-const CACHE_VERSION = 'v30';
+const CACHE_VERSION = 'v31';
 const CACHE_NAME = `portefeuille-${CACHE_VERSION}`;
 
 const PRECACHE = [
