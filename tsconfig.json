@@ -1,0 +1,58 @@
+{
+  "//": [
+    "Type-checking config for a JS-only project. We don't compile anything.",
+    "tsc runs as a linter (--noEmit) and reads JSDoc annotations to catch",
+    "typos, wrong shapes, and undeclared variables across our 9.5k LoC of",
+    "vanilla JS. Adding /// <reference> or @type comments in source files",
+    "is enough to opt code into checking — no .ts files, no transpile step.",
+    "",
+    "Run via:  npx -y -p typescript tsc --noEmit  (also wired into CI)",
+    "",
+    "Strictness is dialed down to a level we can hit today; tighten over",
+    "time as JSDoc coverage grows. The whole point is to flag obvious bugs",
+    "before users see them, not to win a type-purity contest."
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": []
+  },
+  "//include": [
+    "Type-check the numeric core, the storage layer, and the parser — the",
+    "parts where a wrong type means a wrong number for a broker or lost",
+    "data. UI screens are not yet JSDocced enough for tsc to be useful (the",
+    "narrow inference from dom.js helpers produces noise, not signal).",
+    "Adding screens incrementally is fine; do it by JSDoccing src/ui/dom.js",
+    "first so the inference is broad enough to type-check downstream callers.",
+    "",
+    "tests/ and tools/ live in node-land and would need @types/node to type-",
+    "check, which means a package.json — explicitly avoided by this project.",
+    "They're small (<500 LoC) and exercise themselves at runtime via CI."
+  ],
+  "include": [
+    "src/core/**/*.js",
+    "src/store/**/*.js",
+    "src/ingest/**/*.js",
+    "src/version.js"
+  ],
+  "exclude": [
+    "vendor/**",
+    "reference/**",
+    "node_modules/**",
+    "_site/**"
+  ]
+}

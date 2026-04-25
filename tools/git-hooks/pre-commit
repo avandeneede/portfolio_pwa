@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Pre-commit hook for portfolio_pwa.
+#
+# Enforces invariants that are too easy to break by hand:
+#   1. APP_VERSION (src/version.js) and CACHE_VERSION (sw.js) stay in lockstep.
+#      Without this, the SW serves new code while the client still thinks it's
+#      the old version (no auto-reparse) — or vice-versa.
+#
+# Install once via:
+#   tools/git-hooks/install.sh
+#
+# Bypass (use sparingly, you'll regret it):
+#   git commit --no-verify
+
+set -e
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# 1. Version lockstep
+node tools/release.mjs --check || {
+  echo
+  echo "pre-commit: APP_VERSION and CACHE_VERSION are out of sync."
+  echo "            Run 'node tools/release.mjs' to bump in lockstep,"
+  echo "            or fix by hand and re-run 'node tools/release.mjs --check'."
+  exit 1
+}

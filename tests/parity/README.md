@@ -1,4 +1,15 @@
-# Parity tests
+# Parity tests (historical)
+
+> **Status: superseded.** The port has shipped and the JS analyzer now emits
+> more fields than `reference/analyzer.py`, so this test produces hundreds of
+> "extra" diffs against the Python baseline and is no longer useful as a
+> regression check. Use [`tests/snapshot/`](../snapshot/README.md) instead —
+> it's hermetic, JS-only, and detects analyzer drift at the field level.
+>
+> Files here are kept as a developer tool for one-shot cross-validation
+> against the Python original (e.g., when changing the numerical core and
+> wanting a sanity check that the Python and JS still agree on the subset
+> Python computes). Not run in CI.
 
 Proves the JS port of `reference/analyzer.py` matches the Python original on
 deterministic synthetic fixtures.

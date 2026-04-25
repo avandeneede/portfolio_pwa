@@ -2,13 +2,26 @@
 // Port of reference/analyzer.py. No I/O, no imports beyond branch_mapping.
 // All functions take plain data (arrays of plain objects) and return plain data.
 //
-// Parity invariant: this file's output must match reference/analyzer.py
-// byte-for-byte after JSON serialization with sorted keys. See
-// tests/parity/run.mjs.
+// Snapshot invariant: this file's output is locked by tests/snapshot/, which
+// runs the analyzer against synthetic fixtures and diffs against
+// tests/snapshot/baseline.json. Any field-level drift fails CI. To accept a
+// new shape, regenerate with `node tests/snapshot/run.mjs --update` and
+// review the diff.
 //
 // Branch index plumbing: Python uses module-level BRANCH_MAPPING/BRANCH_REVERSE
 // loaded at import time. This JS port threads a `branchIndex` parameter through
 // every function that needs it — cleaner, testable, works in any runtime.
+
+// Input shapes are open by design — the broker's source data has dozens
+// of fields and adding a new one upstream shouldn't break the type-check.
+// We document the most-used ones for IDE hints and treat the rest as `any`.
+/**
+ * @typedef {Record<string, any>} Client
+ * @typedef {Record<string, any>} Police
+ * @typedef {Record<string, any>} Compagnie
+ * @typedef {Record<string, any>} Sinistre
+ * @typedef {import('./branch_mapping.js').BranchIndex} BranchIndex
+ */
 
 import { getBranchCode } from './branch_mapping.js';
 
@@ -18,6 +31,11 @@ import { getBranchCode } from './branch_mapping.js';
 
 // Python 3's round() uses banker's rounding (round half to even).
 // JS Math.round uses round half away from zero. They diverge on exact halves.
+/**
+ * @param {number} x
+ * @param {number} [ndigits]
+ * @returns {number}
+ */
 export function pyRound(x, ndigits = 0) {
   if (!Number.isFinite(x)) return x;
   const factor = Math.pow(10, ndigits);
@@ -850,7 +868,9 @@ const COMPAGNIE_ALIASES = [
 function canonicalizeCompagnie(raw) {
   const s = String(raw ?? '').trim();
   if (!s || s.toLowerCase() === 'none') return null;
-  for (const [re, alias] of COMPAGNIE_ALIASES) {
+  for (const entry of COMPAGNIE_ALIASES) {
+    /** @type {[RegExp, string]} */
+    const [re, alias] = /** @type {any} */ (entry);
     if (re.test(s)) return alias;
   }
   return s.toUpperCase();
@@ -1158,6 +1178,17 @@ export function computeOpportunities(clients, polices, compagniePolices, snapsho
 // CLIENT TOTAL
 // ---------------------------------------------------------------------------
 
+/**
+ * Per-client roll-up used by the "Clients" tab in dashboard. Returns one
+ * row per active client with totals, branches, age, and contact-quality flags.
+ *
+ * @param {Client[]} clients
+ * @param {Police[]} polices
+ * @param {Compagnie[]} compagniePolices
+ * @param {number} snapshotYear
+ * @param {BranchIndex} branchIndex
+ * @returns {Array<Record<string, any>>}
+ */
 export function computeClientTotal(clients, polices, compagniePolices, snapshotYear, branchIndex) {
   if (clients.length === 0) return [];
 
@@ -1304,6 +1335,19 @@ export function computeClientTotal(clients, polices, compagniePolices, snapshotY
 // Full stats bundle
 // ---------------------------------------------------------------------------
 
+/**
+ * Top-level entry point. Runs every per-section computation and bundles
+ * the results into a single object that screens (dashboard, report,
+ * evolution) read from. Returned shape is locked by tests/snapshot/.
+ *
+ * @param {Client[]} clients
+ * @param {Police[]} polices
+ * @param {Compagnie[]} compagniePolices
+ * @param {Sinistre[]} sinistres
+ * @param {number} snapshotYear
+ * @param {BranchIndex} branchIndex
+ * @returns {Record<string, any>}
+ */
 export function computeAllStats(clients, polices, compagniePolices, sinistres, snapshotYear, branchIndex) {
   // Drop utility/reinsurer clients (dossiers 9990+) across every section.
   ({ clients, polices, compagniePolices, sinistres } =
@@ -1353,6 +1397,13 @@ export function computePartialStats(clients, polices, snapshotYear) {
 // Metric extraction (for evolution/comparator)
 // ---------------------------------------------------------------------------
 
+/**
+ * Flatten the nested stats bundle into "section.field" → value pairs for
+ * the metric picker UI in the report screen.
+ *
+ * @param {Record<string, any>} stats
+ * @returns {Record<string, any>}
+ */
 export function extractMetricsFlat(stats) {
   const m = {};
 
@@ -1412,6 +1463,14 @@ export function extractMetricsFlat(stats) {
 // Metric tree (for comparator UI)
 // ---------------------------------------------------------------------------
 
+/**
+ * Build the section/field tree consumed by the metric-picker UI. The shape
+ * is `[{ id, label, icon, children: [{ id, label }] }]` — id-strings are
+ * the dot-paths into extractMetricsFlat output.
+ *
+ * @param {Set<string>|Iterable<string>} allMetricsKeys
+ * @returns {Array<Record<string, any>>}
+ */
 export function buildMetricTree(allMetricsKeys) {
   const keys = [...allMetricsKeys].sort();
   const tree = [

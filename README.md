@@ -57,9 +57,13 @@ sw.js manifest.webmanifest index.html
 
 MVP shipped. All core flows are in: snapshot upload (Excel → parse → preview → commit), dashboard (KPIs + 7 sections computed client-side from the parity-verified analyzer), encrypted backup export/import, settings, offline service worker.
 
-- **Analyzer parity** (`tests/parity/run.mjs`): JS ↔ Python byte-for-byte on 300-client synthetic fixtures, all 11 sections + flat metrics + tree.
+- **Analyzer snapshot** (`tests/snapshot/run.mjs`): JS-only field-level diff against `tests/snapshot/baseline.json` on 300-client synthetic fixtures. Catches any drift in the 11 stat sections, flat metrics, tree, or per-client roll-up.
 - **Smoke tests** (`tests/smoke/run.mjs`): crypto round-trip, wrong-passphrase/corruption guards, SheetJS parse, sql.js schema+insert+fetch+export.
-- **Deploy**: GitHub Actions → Pages, static, no build step. Tests run before deploy.
+- **Locale parity** (`tests/locales/run.mjs`): every key present in any locale file must be present in all of them, with non-empty values. Prevents UI showing raw `evolution.empty_desc` in NL/EN.
+- **Type check** (`tsc --noEmit` via JSDoc): scoped to `src/core`, `src/store`, `src/ingest` — the parts where a wrong type means a wrong number for a broker. UI screens are not yet covered (deliberate, see `tsconfig.json`).
+- **Version lockstep** (`tools/release.mjs --check`): asserts `APP_VERSION` and `CACHE_VERSION` are in sync. Enforced as a pre-commit hook (`tools/git-hooks/install.sh`) and in CI.
+- **Cross-validation** (`tests/parity/`, historical): one-shot JS ↔ Python diff against the original `reference/analyzer.py`. Stale (the JS is now richer than the Python), kept as a developer cross-check tool, not a CI test.
+- **Deploy**: GitHub Actions → Pages, static, no build step. Full test matrix runs before deploy.
 
 ### v51 — security + a11y + boot UX
 
@@ -81,11 +85,21 @@ MVP shipped. All core flows are in: snapshot upload (Excel → parse → preview
 python3 -m http.server 8000
 # → http://localhost:8000/
 
-# Tests
+# Tests (the same set CI runs)
+node tools/release.mjs --check         # version lockstep
+node tests/locales/run.mjs             # locale key parity
+node tests/smoke/run.mjs               # crypto + parser + db
+node tests/snapshot/run.mjs            # analyzer field-level snapshot
+npx -y -p typescript@^6 tsc --noEmit   # JSDoc-driven type check
+
+# Optional: install the pre-commit hook (enforces version lockstep on every
+# commit, no npm/husky needed).
+tools/git-hooks/install.sh
+
+# Optional: regenerate synthetic fixtures and cross-validate against Python.
 python3 tests/fixtures/generate.py
 python3 tests/parity/python_baseline.py
-node tests/parity/run.mjs    # JS ↔ Python parity
-node tests/smoke/run.mjs     # crypto + parser + db
+node tests/parity/run.mjs              # JS ↔ Python (historical, see tests/parity/README.md)
 ```
 
 ## Not in this repo

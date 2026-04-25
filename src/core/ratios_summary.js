@@ -249,7 +249,11 @@ export function buildRatiosSummary(arg, opts = {}) {
       };
     });
     // Flatten column-0 onto the row so older single-column callers still work.
-    const first = values[0] || { value: '—' };
+    // values[0] is always the per-column shape (value/pct/rawValue/rawPct);
+    // the `|| {value: '—'}` fallback is just defensive — if it ever fires it
+    // means the upstream column array is empty, which shouldn't happen.
+    /** @type {{value: any, pct: any, rawValue: any, rawPct: any}} */
+    const first = /** @type {any} */ (values[0] || { value: '—', pct: null, rawValue: null, rawPct: null });
     const row = {
       key: d.key,
       section: d.section,

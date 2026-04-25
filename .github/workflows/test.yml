@@ -1,0 +1,44 @@
+name: Test
+
+# Test gate. Runs on every push and on pull-requests against any branch.
+# The deploy workflow (deploy.yml) runs the full smoke suite separately
+# before publishing to Pages — this workflow runs the full check matrix and
+# fails the PR if any of: smoke, snapshot, locale parity, version lockstep,
+# or tsc is unhappy.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Version lockstep (APP_VERSION ↔ CACHE_VERSION)
+        run: node tools/release.mjs --check
+
+      - name: Locale key-parity (fr/nl/en)
+        run: node tests/locales/run.mjs
+
+      - name: Smoke (crypto + parser + db)
+        run: node tests/smoke/run.mjs
+
+      - name: Analyzer snapshot
+        run: node tests/snapshot/run.mjs
+
+      # Type-check the numeric core, storage, and ingest. We use npx so we
+      # never need to commit a package.json — typescript is fetched on demand.
+      # Pinned to ^6 to keep CI stable while staying current.
+      - name: Type check (tsc --noEmit on src/core, src/store, src/ingest)
+        run: npx -y -p typescript@^6 tsc --noEmit

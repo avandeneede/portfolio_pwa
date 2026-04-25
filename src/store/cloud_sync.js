@@ -45,7 +45,11 @@ let passphrasePrompt = null;
 // after every local DB save we also write the same encrypted blob to the
 // picked file, so iCloud/OneDrive/Dropbox can propagate it automatically.
 export function isSyncSupported() {
-  return typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
+  // showSaveFilePicker is from the File System Access API. It's standardized
+  // in WICG but not yet in TS lib.dom; cast to any to access it without
+  // pulling in @types/wicg-file-system-access.
+  const w = /** @type {any} */ (typeof window !== 'undefined' ? window : null);
+  return !!w && typeof w.showSaveFilePicker === 'function';
 }
 
 // Web Share API with file support: iOS Safari 15+, modern Android.
@@ -210,6 +214,10 @@ export function lockSync() {
 //   2. caller-supplied (e.g. unlock-on-boot path)
 //   3. prompt the user via the installed callback
 // Returns null if no callback is installed or the user cancelled.
+/**
+ * @param {{ explicit?: string|null, prompt?: boolean }} [opts]
+ * @returns {Promise<string|null>}
+ */
 export async function ensurePassphrase({ explicit, prompt = true } = {}) {
   if (explicit) {
     cachedPassphrase = explicit;

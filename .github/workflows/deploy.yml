@@ -33,12 +33,23 @@ jobs:
         with:
           node-version: '22'
 
-      # The Python baseline + JS/Python parity check were scaffolding for the
-      # initial port. The JS analyzer is now the source of truth and outputs
-      # more fields than the Python reference, so the parity check is stale.
-      # Smoke tests still validate the client-side DB/parser/crypto stack.
-      - name: Smoke tests
+      # Pre-deploy gate. The full test matrix runs on every push via test.yml;
+      # this is a belt-and-braces re-check before publishing to Pages. If any
+      # of these fail, the deploy is aborted.
+      - name: Version lockstep
+        run: node tools/release.mjs --check
+
+      - name: Locale parity
+        run: node tests/locales/run.mjs
+
+      - name: Smoke
         run: node tests/smoke/run.mjs
+
+      - name: Analyzer snapshot
+        run: node tests/snapshot/run.mjs
+
+      - name: Type check
+        run: npx -y -p typescript@^6 tsc --noEmit
 
       - name: Prepare deploy directory
         run: |
@@ -48,11 +59,13 @@ jobs:
             --exclude='.git' \
             --exclude='.github' \
             --exclude='tests' \
+            --exclude='tools' \
+            --exclude='docs' \
             --exclude='reference' \
             --exclude='private' \
             --exclude='fixtures' \
             --exclude='node_modules' \
-            --exclude='PLAN.md' \
+            --exclude='tsconfig.json' \
             --exclude='README.md' \
             --exclude='*.xlsx' \
             --exclude='*.xls' \
