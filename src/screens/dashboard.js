@@ -7,7 +7,7 @@ import { t } from '../i18n/index.js';
 import { toast } from '../ui/toast.js';
 import { formatInt, formatCurrency, formatPercent, formatDate, formatMonthYear, branchLabel } from '../ui/format.js';
 import { computeAllStats, computeClientTotal } from '../core/analyzer.js';
-import { buildRatiosSummary } from '../core/ratios_summary.js';
+import { buildRatiosSummary, ratioSectionTitle } from '../core/ratios_summary.js';
 import { icon, iconTile } from '../ui/icon.js';
 import { pieChart, hBarChart, vBarChart } from '../ui/charts.js';
 import { renderReport, printReport } from './report.js';
@@ -146,6 +146,12 @@ function simpleTable(columns, rows) {
         style: c.style || null,
       }, c.label)))),
     h('tbody', {}, rows.map((r) => {
+      // Section header rows span all columns and read as a small
+      // capitalised label. Rendered as a single <td colspan=N>.
+      if (r && r.sectionHeader) {
+        return h('tr', { class: 'ratio-section-head-row' },
+          h('td', { class: 'ratio-section-head', colspan: String(columns.length) }, r.label));
+      }
       const cls = [];
       if (r.emphasize) cls.push('emphasize');
       else if (r.total) cls.push('row-total');
@@ -1206,18 +1212,35 @@ export function renderDashboard(root, ctx, args) {
       cardHead(t('report.s6_title'), t('report.s6_info')),
       simpleTable(
         ratioColumnsConfig,
-        ratioRows.map((r) => ({
-          key: `ratio:${r.key}`,
-          cells: [
-            r.year
-              ? h('span', { class: 'ratio-row-text' }, [
-                  r.label,
-                  h('span', { class: 'ratio-row-year' }, ` · ${r.year}`),
-                ])
-              : r.label,
-            ...r.values.map((v, i) => ratioValueCell(v, ratioColumns[i]?.isCurrent)),
-          ],
-        }))
+        (() => {
+          // Inject a section header row whenever the section changes. The
+          // header spans every column and reads as a small uppercase label.
+          const out = [];
+          let lastSection = null;
+          for (const r of ratioRows) {
+            if (r.section && r.section !== lastSection) {
+              out.push({
+                key: `ratio-section:${r.section}`,
+                sectionHeader: true,
+                label: ratioSectionTitle(r.section),
+              });
+              lastSection = r.section;
+            }
+            out.push({
+              key: `ratio:${r.key}`,
+              cells: [
+                r.year
+                  ? h('span', { class: 'ratio-row-text' }, [
+                      r.label,
+                      h('span', { class: 'ratio-row-year' }, ` · ${r.year}`),
+                    ])
+                  : r.label,
+                ...r.values.map((v, i) => ratioValueCell(v, ratioColumns[i]?.isCurrent)),
+              ],
+            });
+          }
+          return out;
+        })()
       ),
     ]),
   ]);

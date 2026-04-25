@@ -19,7 +19,7 @@ import { formatInt, formatCurrency, formatDate } from '../ui/format.js';
 import { computeAllStats } from '../core/analyzer.js';
 import { lineChart } from '../ui/charts.js';
 import { icon, iconTile } from '../ui/icon.js';
-import { buildRatiosSummary } from '../core/ratios_summary.js';
+import { buildRatiosSummary, ratioSectionTitle } from '../core/ratios_summary.js';
 
 // Each metric: how to pull the value out of stats, how to format, what colour,
 // plus a thematic icon and an `insightKey` pointing at the i18n string shown
@@ -243,19 +243,24 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
     return txt && txt !== k ? txt : '';
   };
 
+  // Per-row CTA: a small blue text button "Action corrective ?" that opens
+  // the same coaching popover as before. Replaced the (i) icon because the
+  // text reads more clearly to brokers — "click for the corrective action"
+  // is the actual job-to-be-done.
   const renderInfoBtn = (text) => {
     if (!text) return null;
+    const ctaLabel = t('evolution.ratio_insight.cta_label');
     const btn = h('button', {
-      class: 'card-info-btn',
+      class: 'ratio-action-cta',
       type: 'button',
-      'aria-label': 'Info',
+      'aria-label': ctaLabel,
       title: stripInsightMarkers(text),
       onclick: (e) => {
         e.stopPropagation();
         const pop = e.currentTarget.nextElementSibling;
         if (pop) pop.classList.toggle('is-open');
       },
-    }, icon('info.circle', { size: 14 }));
+    }, ctaLabel);
     const pop = h('div',
       { class: 'card-info-popover card-info-popover-rich', role: 'tooltip' },
       renderRichInsight(text));
@@ -273,7 +278,22 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
       }, col.label)),
   ]);
 
-  const bodyRows = rows.map((row) => {
+  // Total column count for section header colspan (label col + every snapshot col).
+  const totalCols = 1 + displayCols.length;
+
+  const bodyRows = [];
+  let lastSection = null;
+  for (const row of rows) {
+    // Inject a section header row whenever the section changes. Header spans
+    // the full width and reads as a small uppercase label so the long table
+    // breaks into thematic groups (overview → demographics → ... → claims).
+    if (row.section && row.section !== lastSection) {
+      bodyRows.push(h('tr', { class: 'ratio-section-head-row' },
+        h('td', { class: 'ratio-section-head', colspan: String(totalCols) },
+          ratioSectionTitle(row.section))));
+      lastSection = row.section;
+    }
+
     const labelInfo = insightFor(row);
     // Note: we deliberately don't show row.year here. The Evolution table
     // already has dated columns (one per snapshot), so suffixing "· 2018" on
@@ -315,8 +335,8 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
       ]));
     });
 
-    return h('tr', { 'data-sync-key': `ratio:${row.key}` }, [labelCell, ...valueCells]);
-  });
+    bodyRows.push(h('tr', { 'data-sync-key': `ratio:${row.key}` }, [labelCell, ...valueCells]));
+  }
 
   const title = t('report.s6_title');
   const desc = t('evolution.ratios_intro');
@@ -335,10 +355,6 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
     const pop = h('div', { class: 'card-info-popover', role: 'tooltip' }, desc);
     return h('div', { class: 'card-head' }, [
       h('h3', { class: 'card-h3' }, title),
-      h('span', { class: 'ratios-coaching-badge', title: t('evolution.ratios_coaching_hint') }, [
-        icon('info.circle', { size: 12 }),
-        h('span', {}, t('evolution.ratios_coaching_label')),
-      ]),
       h('div', { class: 'card-head-info' }, [btn, pop]),
     ]);
   })();

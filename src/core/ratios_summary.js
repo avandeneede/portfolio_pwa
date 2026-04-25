@@ -154,46 +154,54 @@ function computeValuesFor(stats) {
   };
 }
 
-// Row descriptors — id + localised label. Order matches the reference rapport.
-// Same layout that used to be inlined in the builder; lifted here so we can
-// zip it against N columns of values.
+// Row descriptors — id + localised label + section group. Order matches the
+// reference rapport, but rows are now grouped into 9 thematic sections so the
+// table reads top-to-bottom as a story (overview → demographics → data
+// quality → multi-equipment → policies → product mix → premiums →
+// commissions → claims). Renderers use the `section` field to inject section
+// header rows between groups.
 function rowDescriptors() {
   return [
-    { key: 'total_with_police', label: t('report.ratio.total_with_police') },
-    { key: 'pct_particuliers', label: t('report.ratio.pct_particuliers') },
-    { key: 'pct_entreprises', label: t('report.ratio.pct_entreprises') },
-    { key: 'pct_p_60plus', label: t('report.ratio.pct_p_60plus') },
-    { key: 'pct_policies_60plus', label: t('report.ratio.pct_policies_60plus') },
-    { key: 'pct_sex_known', label: t('report.ratio.pct_sex_known') },
-    { key: 'pct_age_known', label: t('report.ratio.pct_age_known') },
-    { key: 'pct_social_known', label: t('report.ratio.pct_social_known') },
-    { key: 'pct_civil_known', label: t('report.ratio.pct_civil_known') },
-    { key: 'pct_phone_known', label: t('report.ratio.pct_phone_known') },
-    { key: 'pct_email_known', label: t('report.ratio.pct_email_known') },
-    { key: 'mono_count', label: t('report.ratio.mono_count') },
-    { key: 'pct_mono', label: t('report.ratio.pct_mono') },
-    { key: 'pct_bi', label: t('report.ratio.pct_bi') },
-    { key: 'pct_5plus', label: t('report.ratio.pct_5plus') },
-    { key: 'total_policies', label: t('report.ratio.total_policies') },
-    { key: 'polices_p', label: t('report.ratio.polices_p') },
-    { key: 'pct_polices_p', label: t('report.ratio.pct_polices_p') },
-    { key: 'polices_e', label: t('report.ratio.polices_e') },
-    { key: 'pct_polices_e', label: t('report.ratio.pct_polices_e') },
-    { key: 'avg_policies_per_client', label: t('report.ratio.avg_policies_per_client') },
-    { key: 'avg_polices_p', label: t('report.ratio.avg_polices_p') },
-    { key: 'avg_polices_e', label: t('report.ratio.avg_polices_e') },
-    { key: 'pct_vie', label: t('report.ratio.pct_vie') },
-    { key: 'pct_auto', label: t('report.ratio.pct_auto') },
-    { key: 'pct_incendie_pkg', label: t('report.ratio.pct_incendie_pkg') },
-    { key: 'total_prime', label: t('report.ratio.total_prime') },
-    { key: 'prime_per_client', label: t('report.ratio.prime_per_client') },
-    { key: 'prime_per_policy', label: t('report.ratio.prime_per_policy') },
-    { key: 'total_commission', label: t('report.ratio.total_commission') },
-    { key: 'commission_per_client', label: t('report.ratio.commission_per_client') },
-    { key: 'commission_per_policy', label: t('report.ratio.commission_per_policy') },
-    { key: 'nb_sinistres', label: t('report.ratio.nb_sinistres'), isSinistreYear: true },
-    { key: 'freq_sinistres', label: t('report.ratio.freq_sinistres') },
+    { key: 'total_with_police', section: 'overview', label: t('report.ratio.total_with_police') },
+    { key: 'pct_particuliers', section: 'overview', label: t('report.ratio.pct_particuliers') },
+    { key: 'pct_entreprises', section: 'overview', label: t('report.ratio.pct_entreprises') },
+    { key: 'pct_p_60plus', section: 'demographics', label: t('report.ratio.pct_p_60plus') },
+    { key: 'pct_policies_60plus', section: 'demographics', label: t('report.ratio.pct_policies_60plus') },
+    { key: 'pct_sex_known', section: 'data_quality', label: t('report.ratio.pct_sex_known') },
+    { key: 'pct_age_known', section: 'data_quality', label: t('report.ratio.pct_age_known') },
+    { key: 'pct_social_known', section: 'data_quality', label: t('report.ratio.pct_social_known') },
+    { key: 'pct_civil_known', section: 'data_quality', label: t('report.ratio.pct_civil_known') },
+    { key: 'pct_phone_known', section: 'data_quality', label: t('report.ratio.pct_phone_known') },
+    { key: 'pct_email_known', section: 'data_quality', label: t('report.ratio.pct_email_known') },
+    { key: 'mono_count', section: 'multi_equipment', label: t('report.ratio.mono_count') },
+    { key: 'pct_mono', section: 'multi_equipment', label: t('report.ratio.pct_mono') },
+    { key: 'pct_bi', section: 'multi_equipment', label: t('report.ratio.pct_bi') },
+    { key: 'pct_5plus', section: 'multi_equipment', label: t('report.ratio.pct_5plus') },
+    { key: 'total_policies', section: 'policies', label: t('report.ratio.total_policies') },
+    { key: 'polices_p', section: 'policies', label: t('report.ratio.polices_p') },
+    { key: 'pct_polices_p', section: 'policies', label: t('report.ratio.pct_polices_p') },
+    { key: 'polices_e', section: 'policies', label: t('report.ratio.polices_e') },
+    { key: 'pct_polices_e', section: 'policies', label: t('report.ratio.pct_polices_e') },
+    { key: 'avg_policies_per_client', section: 'policies', label: t('report.ratio.avg_policies_per_client') },
+    { key: 'avg_polices_p', section: 'policies', label: t('report.ratio.avg_polices_p') },
+    { key: 'avg_polices_e', section: 'policies', label: t('report.ratio.avg_polices_e') },
+    { key: 'pct_vie', section: 'product_mix', label: t('report.ratio.pct_vie') },
+    { key: 'pct_auto', section: 'product_mix', label: t('report.ratio.pct_auto') },
+    { key: 'pct_incendie_pkg', section: 'product_mix', label: t('report.ratio.pct_incendie_pkg') },
+    { key: 'total_prime', section: 'premiums', label: t('report.ratio.total_prime') },
+    { key: 'prime_per_client', section: 'premiums', label: t('report.ratio.prime_per_client') },
+    { key: 'prime_per_policy', section: 'premiums', label: t('report.ratio.prime_per_policy') },
+    { key: 'total_commission', section: 'commissions', label: t('report.ratio.total_commission') },
+    { key: 'commission_per_client', section: 'commissions', label: t('report.ratio.commission_per_client') },
+    { key: 'commission_per_policy', section: 'commissions', label: t('report.ratio.commission_per_policy') },
+    { key: 'nb_sinistres', section: 'claims', label: t('report.ratio.nb_sinistres'), isSinistreYear: true },
+    { key: 'freq_sinistres', section: 'claims', label: t('report.ratio.freq_sinistres') },
   ];
+}
+
+// Localised section title for the renderer to inject between row groups.
+export function ratioSectionTitle(key) {
+  return t(`report.ratio.section.${key}`);
 }
 
 // Accepts either a single stats object (legacy single-column usage) or an
@@ -250,6 +258,7 @@ export function buildRatiosSummary(arg, opts = {}) {
     const first = values[0] || { value: '—' };
     const row = {
       key: d.key,
+      section: d.section,
       label: d.label,
       value: first.value,
       pct: first.pct,

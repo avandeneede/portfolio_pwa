@@ -9,7 +9,7 @@ import { h, mount } from '../ui/dom.js';
 import { t } from '../i18n/index.js';
 import { formatInt, formatPercent, formatDate, branchLabel } from '../ui/format.js';
 import { hBarChart, vBarChart, pieChart } from '../ui/charts.js';
-import { buildRatiosSummary } from '../core/ratios_summary.js';
+import { buildRatiosSummary, ratioSectionTitle } from '../core/ratios_summary.js';
 
 const PAGE_COUNT = 10;
 
@@ -73,6 +73,13 @@ function table(rows, opts = {}) {
       }, c && typeof c === 'object' && 'text' in c ? c.text : c))
     )) : null,
     h('tbody', {}, rows.map((r) => {
+      // Section header rows span all columns, used by the ratios-summary
+      // table to break the long list into thematic groups.
+      if (r && r.sectionHeader) {
+        const span = (opts.head && opts.head.length) || (r.span || 1);
+        return h('tr', { class: 'ratio-section-head-row' },
+          h('td', { class: 'ratio-section-head', colspan: String(span) }, r.label));
+      }
       const cls = [];
       if (r.emphasize) cls.push('emphasize');
       else if (r.total) cls.push('row-total');
@@ -696,18 +703,32 @@ function page10(s, stats, ratioSeries, locale) {
     ...columns.map((c) => ({ text: c.label, align: 'right', isCurrent: c.isCurrent })),
   ];
 
-  const leftRows = rows.map((r) => ({
-    cells: [
-      r.year ? `${r.label} · ${r.year}` : r.label,
-      ...r.values.map((v, i) => ({
-        text: v.pct != null
-          ? ratioValueWithPct(v.rawValue, v.rawPct)
-          : v.value,
-        align: 'right',
-        isCurrent: columns[i]?.isCurrent,
-      })),
-    ],
-  }));
+  // Build rows with a section header inserted whenever the section changes.
+  // The header spans every column so the table reads top-to-bottom as a
+  // story (overview → demographics → ... → claims).
+  const leftRows = [];
+  let lastSection = null;
+  for (const r of rows) {
+    if (r.section && r.section !== lastSection) {
+      leftRows.push({
+        sectionHeader: true,
+        label: ratioSectionTitle(r.section),
+      });
+      lastSection = r.section;
+    }
+    leftRows.push({
+      cells: [
+        r.year ? `${r.label} · ${r.year}` : r.label,
+        ...r.values.map((v, i) => ({
+          text: v.pct != null
+            ? ratioValueWithPct(v.rawValue, v.rawPct)
+            : v.value,
+          align: 'right',
+          isCurrent: columns[i]?.isCurrent,
+        })),
+      ],
+    });
+  }
 
   // Summary side boxes (households).
   const boxes = h('div', { class: 'rp-summary-boxes' }, [
