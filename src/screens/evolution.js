@@ -5,8 +5,12 @@
 // twice as wide as a gap of 1 month. Charts work for 1 snapshot too
 // (single dot, centered).
 //
-// All metrics render unconditionally — the previous chip-filter was noise;
-// the metrics are few enough that scrolling beats hiding.
+// At the bottom we render the same "Synthèse des ratios" table as page 10
+// of the print report, but spread across every snapshot — with delta
+// indicators (arrow + Δ% / Δpp) coloured by whether the move was in the
+// "good" or "bad" direction for that particular ratio. Brokers use this
+// to spot drift early (e.g. data quality slipping, ageing client base,
+// rising claim frequency) without having to eyeball the chart grid.
 
 import { h, mount } from '../ui/dom.js';
 import { t } from '../i18n/index.js';
@@ -15,6 +19,7 @@ import { formatInt, formatCurrency, formatDate } from '../ui/format.js';
 import { computeAllStats } from '../core/analyzer.js';
 import { lineChart } from '../ui/charts.js';
 import { icon, iconTile } from '../ui/icon.js';
+import { buildRatiosSummary } from '../core/ratios_summary.js';
 
 // Each metric: how to pull the value out of stats, how to format, what colour,
 // plus a thematic icon and an `insightKey` pointing at the i18n string shown
@@ -48,6 +53,64 @@ const METRICS = [
     iconName: 'arrow.up.arrow.down', insightKey: 'evolution.insight.mono_policy_clients',
     pick: (s) => s.kpi_summary.mono_policy_clients, fmt: formatInt },
 ];
+
+// Per-row "good direction" map. 'up_good' = bigger is better (color rising
+// deltas green). 'up_bad' = smaller is better (color rising deltas red).
+// 'neutral' = depends on broker strategy; show grey.
+//
+// Rationale row by row:
+// - active_clients, policies, premium, commission: bigger book = better.
+// - %P/%E/%auto: depends on positioning; left neutral.
+// - 60+ shares: ageing book is a succession risk → up_bad.
+// - data quality (%known): more known fields = better operational hygiene.
+// - mono-police count and share: shrinking = cross-sell working → up_bad.
+// - %5+ polices: fidélisation indicator → up_good.
+// - %bi-police: ambiguous — better than mono, worse than 5+, so neutral.
+// - %Vie / %Incendie+package: cross-sell handles, more is better.
+// - sinistres: more claims = more leakage → up_bad.
+const DIRECTION_GOODNESS = {
+  total_with_police: 'up_good',
+  pct_particuliers: 'neutral',
+  pct_entreprises: 'neutral',
+  pct_p_60plus: 'up_bad',
+  pct_policies_60plus: 'up_bad',
+  pct_sex_known: 'up_good',
+  pct_age_known: 'up_good',
+  pct_social_known: 'up_good',
+  pct_civil_known: 'up_good',
+  pct_phone_known: 'up_good',
+  pct_email_known: 'up_good',
+  mono_count: 'up_bad',
+  pct_mono: 'up_bad',
+  pct_bi: 'neutral',
+  pct_5plus: 'up_good',
+  total_policies: 'up_good',
+  polices_p: 'up_good',
+  polices_e: 'up_good',
+  avg_policies_per_client: 'up_good',
+  avg_polices_p: 'up_good',
+  avg_polices_e: 'up_good',
+  pct_vie: 'up_good',
+  pct_auto: 'neutral',
+  pct_incendie_pkg: 'up_good',
+  total_prime: 'up_good',
+  prime_per_client: 'up_good',
+  prime_per_policy: 'up_good',
+  total_commission: 'up_good',
+  commission_per_client: 'up_good',
+  commission_per_policy: 'up_good',
+  nb_sinistres: 'up_bad',
+  freq_sinistres: 'up_bad',
+};
+
+// Rows whose rawValue is already a percentage. For these, deltas are shown
+// in percentage points ("+1.2 pp") rather than as relative %.
+const PERCENT_ROWS = new Set([
+  'pct_particuliers', 'pct_entreprises', 'pct_p_60plus', 'pct_policies_60plus',
+  'pct_sex_known', 'pct_age_known', 'pct_social_known', 'pct_civil_known',
+  'pct_phone_known', 'pct_email_known', 'pct_mono', 'pct_bi', 'pct_5plus',
+  'pct_vie', 'pct_auto', 'pct_incendie_pkg', 'freq_sinistres',
+]);
 
 export function renderEvolution(root, ctx) {
   const snapshots = ctx.db.listSnapshots();
@@ -134,6 +197,13 @@ export function renderEvolution(root, ctx) {
     ? formatDate(first.snapshot_date)
     : `${formatDate(first.snapshot_date)} → ${formatDate(last.snapshot_date)}`;
 
+  // Build the multi-snapshot ratios table. buildRatiosSummary expects the
+  // current snapshot first (it tags column 0 with isCurrent for highlighting),
+  // so we feed it newest→oldest. We then render columns in chronological order
+  // (oldest left, newest right) to match the line charts above.
+  const seriesNewestFirst = [...chronological].reverse();
+  const ratiosCard = buildRatiosCard(seriesNewestFirst, ctx);
+
   mount(root, h('div', { class: 'page dash' }, [
     h('div', { class: 'dash-hero' }, [
       h('div', { class: 'dash-hero-main' }, [
@@ -146,5 +216,183 @@ export function renderEvolution(root, ctx) {
       ? h('p', { class: 'form-hint' }, t('evolution.need_more'))
       : null,
     h('div', { class: 'dash-grid dash-grid-evolution' }, METRICS.map(chartCard)),
+    ratiosCard,
   ]));
+}
+
+// --- Ratios table with delta indicators -------------------------------------
+
+function buildRatiosCard(seriesNewestFirst, ctx) {
+  const { rows, columns } = buildRatiosSummary(seriesNewestFirst, { locale: ctx.locale });
+
+  // Display order: oldest left → newest right. columns from buildRatiosSummary
+  // are newest first (because we passed series newest first), so we reverse
+  // for display while keeping the original index handy to look up row.values.
+  const displayCols = columns.map((c, i) => ({ col: c, originalIdx: i })).reverse();
+
+  const insightFor = (row) => {
+    const k = `evolution.ratio_insight.${row.key}`;
+    const txt = t(k);
+    // Fall back to nothing if the key wasn't translated; avoids printing the
+    // raw key as a tooltip.
+    return txt && txt !== k ? txt : '';
+  };
+
+  const renderInfoBtn = (text) => {
+    if (!text) return null;
+    const btn = h('button', {
+      class: 'card-info-btn',
+      type: 'button',
+      'aria-label': 'Info',
+      title: text,
+      onclick: (e) => {
+        e.stopPropagation();
+        const pop = e.currentTarget.nextElementSibling;
+        if (pop) pop.classList.toggle('is-open');
+      },
+    }, icon('info.circle', { size: 14 }));
+    const pop = h('div', { class: 'card-info-popover', role: 'tooltip' }, text);
+    return h('span', { class: 'card-head-info ratio-row-info' }, [btn, pop]);
+  };
+
+  const headerRow = h('tr', {}, [
+    h('th', {}, t('report.ratio.column')),
+    ...displayCols.map(({ col }) =>
+      h('th', {
+        class: 'a-right',
+        style: col.isCurrent
+          ? 'background:color-mix(in srgb, var(--warning) 24%, transparent);color:var(--text);font-weight:700;'
+          : null,
+      }, col.label)),
+  ]);
+
+  const bodyRows = rows.map((row) => {
+    const labelInfo = insightFor(row);
+    const labelCell = h('td', {}, h('div', { class: 'ratio-row-label' }, [
+      h('span', { class: 'ratio-row-text' }, row.label),
+      renderInfoBtn(labelInfo),
+    ]));
+
+    const direction = DIRECTION_GOODNESS[row.key] || 'neutral';
+    const isPercentRow = PERCENT_ROWS.has(row.key);
+
+    const valueCells = displayCols.map(({ col, originalIdx }, displayIdx) => {
+      const v = row.values[originalIdx] || { value: '—' };
+      // Previous snapshot in chronological display order = the column to the
+      // left, which is one slot earlier in displayCols.
+      const prev = displayIdx > 0
+        ? row.values[displayCols[displayIdx - 1].originalIdx]
+        : null;
+
+      const delta = computeDelta(v, prev, direction, isPercentRow, ctx.locale);
+      const valueNode = (v.pct != null)
+        ? h('span', { class: 'rp-val-pct' }, [
+            h('span', { class: 'rp-val' }, v.value),
+            h('span', { class: 'rp-pct' }, v.pct),
+          ])
+        : v.value;
+
+      return h('td', {
+        class: 'a-right',
+        style: col.isCurrent
+          ? 'background:color-mix(in srgb, var(--warning) 14%, transparent);font-weight:600;'
+          : null,
+      }, h('div', { class: 'ratio-cell' }, [
+        h('div', { class: 'ratio-cell-value' }, valueNode),
+        delta ? deltaBadge(delta) : null,
+      ]));
+    });
+
+    return h('tr', { 'data-sync-key': `ratio:${row.key}` }, [labelCell, ...valueCells]);
+  });
+
+  const title = t('report.s6_title');
+  const desc = t('evolution.ratios_intro');
+  const head = (() => {
+    const btn = h('button', {
+      class: 'card-info-btn',
+      type: 'button',
+      'aria-label': 'Info',
+      title: desc,
+      onclick: (e) => {
+        e.stopPropagation();
+        const pop = e.currentTarget.nextElementSibling;
+        if (pop) pop.classList.toggle('is-open');
+      },
+    }, icon('info.circle', { size: 16 }));
+    const pop = h('div', { class: 'card-info-popover', role: 'tooltip' }, desc);
+    return h('div', { class: 'card-head' }, [
+      h('h3', { class: 'card-h3' }, title),
+      h('div', { class: 'card-head-info' }, [btn, pop]),
+    ]);
+  })();
+
+  return h('div', { class: 'dash-card', style: 'margin-top:24px;' }, [
+    head,
+    h('div', { class: 'table-wrap' }, h('table', { class: 'dash-table evo-ratios-table' }, [
+      h('thead', {}, headerRow),
+      h('tbody', {}, bodyRows),
+    ])),
+    h('p', { class: 'form-hint', style: 'margin-top:10px;' },
+      t('evolution.ratios_legend')),
+  ]);
+}
+
+// Compute delta info between current and previous column for a ratio row.
+// Returns { dir: 'up'|'down'|'flat', goodness: 'good'|'bad'|'neutral', label }
+// or null if no comparison is possible.
+function computeDelta(curr, prev, direction, isPercentRow, locale) {
+  if (!prev) return null;
+  if (curr.rawValue == null || prev.rawValue == null) return null;
+  const d = curr.rawValue - prev.rawValue;
+  // Treat tiny floating-point noise as flat.
+  const epsilon = isPercentRow ? 0.005 : 0.5;
+  if (Math.abs(d) < epsilon) {
+    return { dir: 'flat', goodness: 'neutral', label: '±0' };
+  }
+
+  let goodness;
+  if (direction === 'neutral') goodness = 'neutral';
+  else if (direction === 'up_good') goodness = d > 0 ? 'good' : 'bad';
+  else goodness = d > 0 ? 'bad' : 'good'; // up_bad
+
+  let label;
+  if (isPercentRow) {
+    // Percentage-point delta. Format with 1 decimal, locale-aware separator.
+    const ppText = formatSignedDecimal(d, 1, locale);
+    label = `${ppText} pp`;
+  } else if (prev.rawValue !== 0) {
+    const pct = d / Math.abs(prev.rawValue) * 100;
+    label = `${formatSignedDecimal(pct, 1, locale)}%`;
+  } else {
+    // Previous was zero, current is non-zero: relative pct undefined; show abs.
+    label = formatSignedInt(d, locale);
+  }
+
+  return { dir: d > 0 ? 'up' : 'down', goodness, label };
+}
+
+function formatSignedDecimal(n, decimals, locale) {
+  const sign = n > 0 ? '+' : '';
+  const formatted = n.toLocaleString(locale || undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  return sign + formatted;
+}
+
+function formatSignedInt(n, locale) {
+  const sign = n > 0 ? '+' : '';
+  const formatted = Math.round(n).toLocaleString(locale || undefined);
+  return sign + formatted;
+}
+
+function deltaBadge(delta) {
+  const arrow = delta.dir === 'up' ? '▲' : delta.dir === 'down' ? '▼' : '·';
+  return h('span', {
+    class: `ratio-delta ratio-delta-${delta.goodness} ratio-delta-${delta.dir}`,
+  }, [
+    h('span', { class: 'ratio-delta-arrow' }, arrow),
+    h('span', { class: 'ratio-delta-label' }, delta.label),
+  ]);
 }

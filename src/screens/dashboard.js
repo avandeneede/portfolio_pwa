@@ -1166,16 +1166,18 @@ export function renderDashboard(root, ctx, args) {
   // PDF. Built from the shared buildRatiosSummary() helper so both surfaces
   // stay in lockstep.
 
-  const { rows: ratioRows, columns: ratioColumns } = buildRatiosSummary(ratioSeries, { locale: ctx.locale });
+  // Single snapshot view: one column only. The multi-snapshot evolution lives
+  // on the Evolution screen (with deltas) and on page 10 of the print report.
+  // Here the broker just wants today's numbers without the comparison clutter.
+  const { rows: ratioRows, columns: ratioColumns } = buildRatiosSummary(
+    [{ stats, snapshot }],
+    { locale: ctx.locale },
+  );
   // Ménages summary boxes are already shown in the hero summaryGrid at the
   // top of the dashboard, so we skip them here and surface only the long
   // ratios table. For the polices-p / polices-e rows we want the count and
   // the % visually separated (same treatment as the print report, .rp-val-pct
   // is a shared inline-flex helper).
-  //
-  // Multi-period layout: one column per snapshot in ratioSeries (current +
-  // up to 2 historical). The "current" column is tinted so the eye lands on
-  // today's portfolio before drifting into the comparison.
   const ratioValueCell = (v, isCurrent) => {
     const inner = (v.pct != null)
       ? h('span', { class: 'rp-val-pct' }, [

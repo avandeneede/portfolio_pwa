@@ -2040,3 +2040,60 @@ button { font-family: inherit; }
   /* Prevent iOS from auto-zooming into inputs with <16px text. */
   input, select, textarea { font-size: 16px; }
 }
+
+/* --- Evolution: ratios summary across snapshots ----------------------------
+ * Same dash-table chrome as the dashboard ratios block, but each value cell
+ * stacks the value on top of a small delta badge (arrow + Δ% / Δpp) coloured
+ * by whether the move was in the "good" or "bad" direction for that ratio.
+ * The label cell hosts a per-row info popover explaining what an up/down
+ * move means and what corrective action to take.
+ */
+.evo-ratios-table .ratio-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.evo-ratios-table .ratio-row-text { line-height: 1.3; }
+.evo-ratios-table .ratio-row-info {
+  position: relative;
+  flex: 0 0 auto;
+}
+.evo-ratios-table .ratio-row-info .card-info-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+}
+
+/* Value cell stack: value on top, delta badge on bottom-right. */
+.ratio-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.ratio-cell-value { line-height: 1.2; }
+
+.ratio-delta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.ratio-delta-arrow { font-size: 10px; }
+.ratio-delta-good {
+  color: var(--success, #34c759);
+  background: color-mix(in srgb, var(--success, #34c759) 14%, transparent);
+}
+.ratio-delta-bad {
+  color: var(--danger, #ff3b30);
+  background: color-mix(in srgb, var(--danger, #ff3b30) 14%, transparent);
+}
+.ratio-delta-neutral {
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text-2) 12%, transparent);
+}

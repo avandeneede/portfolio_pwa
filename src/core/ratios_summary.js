@@ -81,23 +81,43 @@ function computeValuesFor(stats) {
 
   // Values keyed by row id. Kept flat so the row-descriptor array below can
   // zip label + values across multiple snapshots without re-doing math.
+  // Each row also carries `rawValue` (and `rawPct` where applicable) so the
+  // Evolution screen can compute snapshot-to-snapshot deltas without parsing
+  // the formatted strings back to numbers.
+  const pctP = ov.active_clients ? (ov.active_particuliers / ov.active_clients * 100) : 0;
+  const pctE = ov.active_clients ? (ov.active_entreprises / ov.active_clients * 100) : 0;
+  const sexKnown = pctKnown('sexe');
+  const ageKnown = pctKnown('date_naissance');
+  const socKnown = pctKnown('statut_social');
+  const civKnown = pctKnown('etat_civil');
+  const telKnown = pctKnown('telephone');
+  const emlKnown = pctKnown('email');
+  const totalPrime = hasPremium ? (kpi.total_premium || 0) : null;
+  const primePerClient = hasPremium ? (kpi.avg_premium_per_client || 0) : null;
+  const primePerPolicy = hasPremium && kpi.total_polices
+    ? Math.round((kpi.total_premium || 0) / kpi.total_polices) : null;
+  const totalCommission = hasCommissions ? (kpi.total_commission || 0) : null;
+  const commissionPerClient = hasCommissions ? (kpi.avg_commission_per_client || 0) : null;
+  const commissionPerPolicy = hasCommissions && kpi.total_polices
+    ? Math.round((kpi.total_commission || 0) / kpi.total_polices) : null;
+
   return {
-    total_with_police: { value: formatInt(ov.active_clients) },
-    pct_particuliers: { value: formatPercent(ov.active_clients ? (ov.active_particuliers / ov.active_clients * 100) : 0, 2) },
-    pct_entreprises: { value: formatPercent(ov.active_clients ? (ov.active_entreprises / ov.active_clients * 100) : 0, 2) },
-    pct_p_60plus: { value: formatPercent(pct_clients_60plus, 2) },
-    pct_policies_60plus: { value: formatPercent(pct_policies_60plus, 2) },
-    pct_sex_known: { value: formatPercent(pctKnown('sexe'), 2) },
-    pct_age_known: { value: formatPercent(pctKnown('date_naissance'), 2) },
-    pct_social_known: { value: formatPercent(pctKnown('statut_social'), 2) },
-    pct_civil_known: { value: formatPercent(pctKnown('etat_civil'), 2) },
-    pct_phone_known: { value: formatPercent(pctKnown('telephone'), 2) },
-    pct_email_known: { value: formatPercent(pctKnown('email'), 2) },
-    mono_count: { value: formatInt(kpi.mono_policy_clients) },
-    pct_mono: { value: formatPercent(pct_mono, 2) },
-    pct_bi: { value: formatPercent(pct_bi, 2) },
-    pct_5plus: { value: formatPercent(pct_5plus, 2) },
-    total_policies: { value: formatInt(kpi.total_polices) },
+    total_with_police: { value: formatInt(ov.active_clients), rawValue: ov.active_clients || 0 },
+    pct_particuliers: { value: formatPercent(pctP, 2), rawValue: pctP },
+    pct_entreprises: { value: formatPercent(pctE, 2), rawValue: pctE },
+    pct_p_60plus: { value: formatPercent(pct_clients_60plus, 2), rawValue: pct_clients_60plus },
+    pct_policies_60plus: { value: formatPercent(pct_policies_60plus, 2), rawValue: pct_policies_60plus },
+    pct_sex_known: { value: formatPercent(sexKnown, 2), rawValue: sexKnown },
+    pct_age_known: { value: formatPercent(ageKnown, 2), rawValue: ageKnown },
+    pct_social_known: { value: formatPercent(socKnown, 2), rawValue: socKnown },
+    pct_civil_known: { value: formatPercent(civKnown, 2), rawValue: civKnown },
+    pct_phone_known: { value: formatPercent(telKnown, 2), rawValue: telKnown },
+    pct_email_known: { value: formatPercent(emlKnown, 2), rawValue: emlKnown },
+    mono_count: { value: formatInt(kpi.mono_policy_clients), rawValue: kpi.mono_policy_clients || 0 },
+    pct_mono: { value: formatPercent(pct_mono, 2), rawValue: pct_mono },
+    pct_bi: { value: formatPercent(pct_bi, 2), rawValue: pct_bi },
+    pct_5plus: { value: formatPercent(pct_5plus, 2), rawValue: pct_5plus },
+    total_policies: { value: formatInt(kpi.total_polices), rawValue: kpi.total_polices || 0 },
     polices_p: {
       value: formatInt(kpi.polices_particuliers || 0),
       pct: formatPercent(pct_polices_p, 2),
@@ -110,20 +130,20 @@ function computeValuesFor(stats) {
       rawValue: kpi.polices_entreprises || 0,
       rawPct: pct_polices_e,
     },
-    avg_policies_per_client: { value: formatDecimal(kpi.avg_polices_per_client || 0, 2) },
-    avg_polices_p: { value: formatDecimal(kpi.avg_polices_per_client_p || 0, 2) },
-    avg_polices_e: { value: formatDecimal(kpi.avg_polices_per_client_e || 0, 2) },
-    pct_vie: { value: formatPercent(pct_vie_all, 2) },
-    pct_auto: { value: formatPercent(pct_auto, 2) },
-    pct_incendie_pkg: { value: formatPercent(incendiePackageP, 2) },
-    total_prime: { value: hasPremium ? formatInt(kpi.total_premium) : naLabel },
-    prime_per_client: { value: hasPremium ? formatInt(kpi.avg_premium_per_client) : naLabel },
-    prime_per_policy: { value: hasPremium && kpi.total_polices ? formatInt(Math.round(kpi.total_premium / kpi.total_polices)) : naLabel },
-    total_commission: { value: hasCommissions ? formatInt(kpi.total_commission) : naLabel },
-    commission_per_client: { value: hasCommissions ? formatInt(kpi.avg_commission_per_client) : naLabel },
-    commission_per_policy: { value: hasCommissions && kpi.total_polices ? formatInt(Math.round(kpi.total_commission / kpi.total_polices)) : naLabel },
-    nb_sinistres: { value: formatInt(nSinistres), year: kpi.sinistre_year || null },
-    freq_sinistres: { value: formatPercent(freq_sinistres, 2) },
+    avg_policies_per_client: { value: formatDecimal(kpi.avg_polices_per_client || 0, 2), rawValue: kpi.avg_polices_per_client || 0 },
+    avg_polices_p: { value: formatDecimal(kpi.avg_polices_per_client_p || 0, 2), rawValue: kpi.avg_polices_per_client_p || 0 },
+    avg_polices_e: { value: formatDecimal(kpi.avg_polices_per_client_e || 0, 2), rawValue: kpi.avg_polices_per_client_e || 0 },
+    pct_vie: { value: formatPercent(pct_vie_all, 2), rawValue: pct_vie_all },
+    pct_auto: { value: formatPercent(pct_auto, 2), rawValue: pct_auto },
+    pct_incendie_pkg: { value: formatPercent(incendiePackageP, 2), rawValue: incendiePackageP },
+    total_prime: { value: hasPremium ? formatInt(totalPrime) : naLabel, rawValue: totalPrime },
+    prime_per_client: { value: hasPremium ? formatInt(primePerClient) : naLabel, rawValue: primePerClient },
+    prime_per_policy: { value: primePerPolicy != null ? formatInt(primePerPolicy) : naLabel, rawValue: primePerPolicy },
+    total_commission: { value: hasCommissions ? formatInt(totalCommission) : naLabel, rawValue: totalCommission },
+    commission_per_client: { value: hasCommissions ? formatInt(commissionPerClient) : naLabel, rawValue: commissionPerClient },
+    commission_per_policy: { value: commissionPerPolicy != null ? formatInt(commissionPerPolicy) : naLabel, rawValue: commissionPerPolicy },
+    nb_sinistres: { value: formatInt(nSinistres), rawValue: nSinistres, year: kpi.sinistre_year || null },
+    freq_sinistres: { value: formatPercent(freq_sinistres, 2), rawValue: freq_sinistres },
     // Also surface boxes (household totals) per snapshot.
     _box_total_menages: { value: formatInt(kpi.total_menages || 0) },
     _box_menages_mono: {
