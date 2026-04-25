@@ -887,6 +887,15 @@ button { font-family: inherit; }
   align-items: center;
 }
 .card-split-tables { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+/* Stack two tables in the same card-split: lock their column widths so the
+ * count + % columns line up across both tables. Without this, each <table>
+ * auto-sizes its columns based on its own content (e.g. "Particuliers" vs
+ * "Entreprises" header) and the right edges drift apart by a few pixels. */
+.card-split-tables .dash-table { table-layout: fixed; }
+.card-split-tables .dash-table th:nth-child(2),
+.card-split-tables .dash-table td:nth-child(2) { width: 88px; }
+.card-split-tables .dash-table th:nth-child(3),
+.card-split-tables .dash-table td:nth-child(3) { width: 72px; }
 .card-split-chart { min-width: 0; }
 @media (max-width: 820px) {
   .card-split { grid-template-columns: 1fr; gap: 16px; }
