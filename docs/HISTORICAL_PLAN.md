@@ -1,6 +1,12 @@
-# PLAN — Static PWA refactor of `insurance_portfolio_analysis`
+# HISTORICAL PLAN — Static PWA refactor of `insurance_portfolio_analysis`
 
-> **Status:** reviewed via `/autoplan`, revised with user overrides, ready for fork + Step 1
+> **⚠️ This is a historical document.** It captures the original planning at
+> project genesis. The PWA has shipped and evolved well past it. For the
+> current architecture and status see [`README.md`](../README.md). Kept in
+> the repo as a record of the original decisions and trade-offs, not as a
+> source of truth for current code.
+
+> **Status (original):** reviewed via `/autoplan`, revised with user overrides, ready for fork + Step 1
 > **Branch:** `plan/static-pwa-refactor` (on the current repo); target = new forked repo
 > **Deployment:** static PWA on GitHub Pages or Cloudflare Pages
 > **Style reference:** `avandeneede/breakdown` (iOS-style primitives, CSS variables, light+dark)
