@@ -1352,11 +1352,10 @@ async function fillChoropleth(root, geo, ctx) {
   const data = await loadMunicipalities();
   const { counts, mapped, total, unmapped } = resolveCountsByPostcode(geo.rows, data.cpToCanonical);
   const lang = (ctx.locale === 'nl') ? 'nl' : 'fr';
-  const { svg: svgEl, max } = municipalityChoropleth({
-    data, counts, total, t, labelLang: lang,
-  });
   host.replaceChildren();
-  host.appendChild(svgEl);
+  const { max } = municipalityChoropleth({
+    data, counts, total, t, labelLang: lang, host,
+  });
   host.appendChild(choroplethLegend({ max, t }));
   // Surface a small note when broker postcodes didn't resolve to a polygon so
   // the user knows the map is approximate. (CPs outside Belgium, blanks, or

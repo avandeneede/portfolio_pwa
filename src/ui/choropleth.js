@@ -97,7 +97,11 @@ function colorFor(count, max, gamma = 0.5) {
 }
 
 /**
- * Build the choropleth SVG with pan/zoom interactions.
+ * Build the choropleth SVG with pan/zoom interactions and mount it (plus the
+ * tooltip and zoom controls) into `host`. The tooltip and zoom controls are
+ * regular DOM nodes positioned absolutely over the SVG — that's how we avoid
+ * the SVG-foreignObject shadow-repaint bug (Chrome leaves shadow trails when
+ * the foreignObject's bbox doesn't include the box-shadow extent).
  *
  * @param {{
  *   data: { viewBox: string, features: Array<{cp,name_fr,name_nl,d}>, cpToCanonical: Map },
@@ -105,11 +109,12 @@ function colorFor(count, max, gamma = 0.5) {
  *   total: number,
  *   t: (key: string) => string,
  *   labelLang?: 'fr'|'nl',
+ *   host: HTMLElement,                       // must be position: relative
  * }} args
- * @returns {{ svg: SVGElement, max: number }}
+ * @returns {{ max: number }}
  */
 export function municipalityChoropleth(args) {
-  const { data, counts, total, t, labelLang } = args;
+  const { data, counts, total, t, labelLang, host } = args;
   const lang = labelLang === 'nl' ? 'nl' : 'fr';
   let max = 0;
   for (const v of counts.values()) if (v > max) max = v;
@@ -123,8 +128,9 @@ export function municipalityChoropleth(args) {
   });
 
   // All paths live inside a single <g> so we can apply a single `transform`
-  // attribute for pan/zoom — and so the tooltip's foreignObject stays in
-  // unscaled SVG space (otherwise zooming would also scale the tooltip).
+  // attribute for pan/zoom. The transform stays on the SVG side; tooltip
+  // and controls live in DOM and are positioned in pixel-space using
+  // getBoundingClientRect, so they're immune to SVG repaint quirks.
   const stage = svg('g', { class: 'choropleth-stage' });
   root.appendChild(stage);
 
@@ -151,40 +157,34 @@ export function municipalityChoropleth(args) {
   }
 
   // ---- Pan / zoom state. We track viewBox-space transform: scale + tx/ty.
-  // The actual `transform` attribute is on the stage <g>, so the tooltip
-  // (rendered later in unscaled space) keeps a consistent on-screen size.
   const initialVB = data.viewBox.split(' ').map(Number);
   const [, , vbW, vbH] = initialVB;
   let scale = 1, tx = 0, ty = 0;
+  // Forward declared; the actual element is built and assigned in the
+  // controls block below, so we use `let` (not const) to allow late binding
+  // without a TDZ trap if applyTransform somehow ran during setup.
+  let zoomLabel = null;
   function applyTransform() {
     stage.setAttribute('transform', `translate(${tx} ${ty}) scale(${scale})`);
+    if (zoomLabel) zoomLabel.textContent = `${scale.toFixed(1)}×`;
+    // Hide tooltip on every transform change — the highlighted polygon may
+    // have moved off-screen, and recomputing its position would be racy.
+    hideTip();
   }
   function clamp() {
-    // Keep the map within the viewBox: at scale=1 the offsets are 0; as we
-    // zoom in, allow panning by up to (vb*(scale-1)) in each direction.
     const minTx = vbW * (1 - scale);
     const minTy = vbH * (1 - scale);
     if (tx > 0) tx = 0; if (tx < minTx) tx = minTx;
     if (ty > 0) ty = 0; if (ty < minTy) ty = minTy;
   }
-
-  // Wheel: zoom anchored at the cursor. We convert the wheel event's client
-  // coords into SVG viewBox coords via getScreenCTM(), then adjust tx/ty so
-  // the point under the cursor stays put.
-  root.addEventListener('wheel', (e) => {
-    e.preventDefault();
+  function zoomAt(clientX, clientY, factor) {
     const ctm = stage.getScreenCTM();
     if (!ctm) return;
     const pt = root.createSVGPoint();
-    pt.x = e.clientX; pt.y = e.clientY;
-    const local = pt.matrixTransform(ctm.inverse());  // in stage's local (pre-transform) coords
-    const factor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+    pt.x = clientX; pt.y = clientY;
+    const local = pt.matrixTransform(ctm.inverse());
     const newScale = Math.max(1, Math.min(20, scale * factor));
     if (newScale === scale) return;
-    // Anchor: stage_x = (svg_x - tx) / scale  → must remain `local.x`.
-    // After zoom: svg_x = local.x * newScale + new_tx → solve new_tx.
-    // We computed local in pre-transform coords; the on-screen anchor in
-    // viewBox space is (local.x * scale + tx). Keep that fixed.
     const anchorVbX = local.x * scale + tx;
     const anchorVbY = local.y * scale + ty;
     tx = anchorVbX - local.x * newScale;
@@ -192,6 +192,19 @@ export function municipalityChoropleth(args) {
     scale = newScale;
     clamp();
     applyTransform();
+  }
+  function zoomCenter(factor) {
+    const r = root.getBoundingClientRect();
+    zoomAt(r.left + r.width / 2, r.top + r.height / 2, factor);
+  }
+  function reset() {
+    scale = 1; tx = 0; ty = 0; applyTransform();
+  }
+
+  // Wheel zoom anchored at cursor.
+  root.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.2 : 1 / 1.2);
   }, { passive: false });
 
   // Drag pan. Mouse + touch via Pointer Events.
@@ -201,10 +214,10 @@ export function municipalityChoropleth(args) {
     dragging = true; lastX = e.clientX; lastY = e.clientY;
     root.setPointerCapture?.(e.pointerId);
     root.classList.add('is-dragging');
+    hideTip();
   });
   root.addEventListener('pointermove', (e) => {
     if (!dragging) return;
-    // Convert client-space delta into viewBox-space delta via CTM.
     const ctm = root.getScreenCTM();
     if (!ctm) return;
     const dx = (e.clientX - lastX) / ctm.a;
@@ -221,31 +234,20 @@ export function municipalityChoropleth(args) {
   }
   root.addEventListener('pointerup', endDrag);
   root.addEventListener('pointercancel', endDrag);
+  root.addEventListener('dblclick', reset);
 
-  // Double-click resets. Less surprising than ctrl/cmd-zero on a chart.
-  root.addEventListener('dblclick', () => {
-    scale = 1; tx = 0; ty = 0; applyTransform();
-  });
-
-  // ---- Tooltip overlay (CSP-safe: <foreignObject> + <div>, hidden via CSSOM).
-  const tipFo = svg('foreignObject', {
-    x: 0, y: 0, width: 240, height: 64,
-    class: 'choropleth-tip-fo',
-  });
-  tipFo.style.overflow = 'visible';
-  tipFo.style.pointerEvents = 'none';
-  tipFo.style.display = 'none';
-
+  // ---- Tooltip: regular DOM div absolute-positioned inside the host.
+  // Pixel positioning via getBoundingClientRect avoids the SVG repaint
+  // bug where foreignObject box-shadows leave grey ghosts on the canvas.
   const tip = document.createElement('div');
   tip.className = 'choropleth-tip';
+  tip.style.display = 'none';
   const tipName = document.createElement('div');
   tipName.className = 'choropleth-tip-name';
   const tipCount = document.createElement('div');
   tipCount.className = 'choropleth-tip-count';
   tip.appendChild(tipName);
   tip.appendChild(tipCount);
-  tipFo.appendChild(tip);
-  root.appendChild(tipFo);
 
   let highlighted = null;
   function showTip(target) {
@@ -258,32 +260,30 @@ export function municipalityChoropleth(args) {
     tipCount.textContent = count > 0
       ? `${count} ${t('choropleth.tip.clients')} · ${pct.toFixed(1)}%`
       : t('choropleth.tip.no_clients');
-    // Position tooltip near the path centroid in *post-transform* viewBox
-    // space — getBBox() returns local (pre-transform) coords so we map them.
-    const bb = target.getBBox();
-    const cx = bb.x + bb.width / 2;
-    const cy = bb.y;
-    const vbX = cx * scale + tx;
-    const vbY = cy * scale + ty;
-    const tw = 240;
-    const th = count > 0 ? 50 : 36;
-    let tipX = vbX - tw / 2;
-    let tipY = vbY - th - 6;
-    if (tipX < 4) tipX = 4;
-    if (tipX + tw > vbW - 4) tipX = vbW - tw - 4;
-    if (tipY < 4) tipY = vbY + bb.height * scale + 6;
-    if (tipY + th > vbH - 4) tipY = vbH - th - 4;
-    tipFo.setAttribute('x', String(tipX));
-    tipFo.setAttribute('y', String(tipY));
-    tipFo.setAttribute('width', String(tw));
-    tipFo.setAttribute('height', String(th));
-    tipFo.style.display = 'block';
+    // Position from the polygon's actual on-screen pixel rect. We center
+    // horizontally on the polygon's mid-x and place the tooltip just above
+    // the polygon's top edge; CSS `transform: translate(-50%, -100%)` does
+    // the offset and the `translateY` keeps an 8px gap.
+    const pr = target.getBoundingClientRect();
+    const hr = host.getBoundingClientRect();
+    const cx = pr.left + pr.width / 2 - hr.left;
+    let top = pr.top - hr.top - 8;
+    let placement = 'top';
+    // If there's no room above, flip below the polygon.
+    if (top < 60) {
+      top = pr.bottom - hr.top + 8;
+      placement = 'bottom';
+    }
+    tip.style.left = `${Math.round(cx)}px`;
+    tip.style.top = `${Math.round(top)}px`;
+    tip.dataset.placement = placement;
+    tip.style.display = 'block';
     if (highlighted && highlighted !== target) highlighted.classList.remove('is-hover');
     target.classList.add('is-hover');
     highlighted = target;
   }
   function hideTip() {
-    tipFo.style.display = 'none';
+    tip.style.display = 'none';
     if (highlighted) highlighted.classList.remove('is-hover');
     highlighted = null;
   }
@@ -296,7 +296,32 @@ export function municipalityChoropleth(args) {
   }
   root.addEventListener('mouseleave', hideTip);
 
-  return { svg: root, max };
+  // ---- Zoom controls: floating top-right with +/-/reset and a level chip.
+  const controls = document.createElement('div');
+  controls.className = 'choropleth-controls';
+  function btn(label, ariaKey, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'choropleth-ctl';
+    b.textContent = label;
+    b.setAttribute('aria-label', t(ariaKey) || label);
+    b.addEventListener('click', (e) => { e.preventDefault(); onClick(); });
+    return b;
+  }
+  controls.appendChild(btn('+', 'choropleth.zoom_in', () => zoomCenter(1.4)));
+  controls.appendChild(btn('−', 'choropleth.zoom_out', () => zoomCenter(1 / 1.4)));
+  controls.appendChild(btn('⌂', 'choropleth.zoom_reset', reset));
+  zoomLabel = document.createElement('span');
+  zoomLabel.className = 'choropleth-zoom-label';
+  zoomLabel.textContent = '1.0×';
+  controls.appendChild(zoomLabel);
+
+  // Mount everything into the host (caller has set position:relative on it).
+  host.appendChild(root);
+  host.appendChild(tip);
+  host.appendChild(controls);
+
+  return { max };
 }
 
 /**
