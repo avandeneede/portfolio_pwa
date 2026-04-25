@@ -275,11 +275,13 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
 
   const bodyRows = rows.map((row) => {
     const labelInfo = insightFor(row);
+    // Note: we deliberately don't show row.year here. The Evolution table
+    // already has dated columns (one per snapshot), so suffixing "· 2018" on
+    // the sinistres row was redundant and confusing — each cell already lives
+    // under its own year header. Dashboard + print report still show the year
+    // because they only display a single snapshot's column.
     const labelCell = h('td', {}, h('div', { class: 'ratio-row-label' }, [
-      h('span', { class: 'ratio-row-text' }, [
-        row.label,
-        row.year ? h('span', { class: 'ratio-row-year' }, ` · ${row.year}`) : null,
-      ]),
+      h('span', { class: 'ratio-row-text' }, row.label),
       renderInfoBtn(labelInfo),
     ]));
 
