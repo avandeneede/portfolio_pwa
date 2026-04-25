@@ -10,7 +10,7 @@
 // Keep in sync with APP_VERSION in src/version.js — that's what triggers
 // the client-side auto-reparse of stored snapshots after a parser change.
 
-const CACHE_VERSION = 'v47';
+const CACHE_VERSION = 'v48';
 const CACHE_NAME = `portefeuille-${CACHE_VERSION}`;
 
 const PRECACHE = [
@@ -57,6 +57,7 @@ const PRECACHE = [
   './vendor/sql.js/sql-wasm.js',
   './vendor/sql.js/sql-wasm.wasm',
   './vendor/sheetjs/xlsx.full.min.js',
+  './vendor/fontawesome/fa-sprite.svg',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',

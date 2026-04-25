@@ -9,6 +9,7 @@ import { loadProfile, saveProfile } from './store/profile.js';
 import { writeToSync } from './store/cloud_sync.js';
 import { toast } from './ui/toast.js';
 import { renderShell, refreshSidebar, getContentRoot } from './ui/shell.js';
+import { ensureIconSprite } from './ui/icon.js';
 import { renderHome } from './screens/home.js';
 import { renderUpload } from './screens/upload.js';
 import { renderPreview } from './screens/preview.js';
@@ -145,6 +146,12 @@ function onProfileChanged() {
 ctx.onProfileChanged = onProfileChanged;
 
 async function bootstrap() {
+  // Inject the FA7 sprite into <body> before any UI renders. Icons are rendered
+  // via <use href="#alias"/> so they need the sprite to be in the DOM. Fire and
+  // forget — UI that mounts before this resolves will simply paint blank icons
+  // for a frame, then catch up the moment <use> resolves.
+  ensureIconSprite().catch((e) => console.warn('[icon] sprite load failed', e));
+
   const initialLocale = loadSavedLocale();
   await setLocale(initialLocale);
   ctx.locale = initialLocale;
