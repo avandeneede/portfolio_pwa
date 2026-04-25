@@ -23,6 +23,8 @@
 // Interaction: hover/focus shows a tooltip with CP, name, count, %. Wheel
 // zooms (anchored to cursor), drag pans, double-click resets.
 
+import { icon } from './icon.js';
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const DATA_PATH = './data/be_municipalities.json';
 
@@ -299,18 +301,22 @@ export function municipalityChoropleth(args) {
   // ---- Zoom controls: floating top-right with +/-/reset and a level chip.
   const controls = document.createElement('div');
   controls.className = 'choropleth-controls';
-  function btn(label, ariaKey, onClick) {
+  function btn(content, ariaKey, onClick) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'choropleth-ctl';
-    b.textContent = label;
-    b.setAttribute('aria-label', t(ariaKey) || label);
+    if (typeof content === 'string') {
+      b.textContent = content;
+    } else {
+      b.appendChild(content);
+    }
+    b.setAttribute('aria-label', t(ariaKey) || ariaKey);
     b.addEventListener('click', (e) => { e.preventDefault(); onClick(); });
     return b;
   }
   controls.appendChild(btn('+', 'choropleth.zoom_in', () => zoomCenter(1.4)));
   controls.appendChild(btn('−', 'choropleth.zoom_out', () => zoomCenter(1 / 1.4)));
-  controls.appendChild(btn('⌂', 'choropleth.zoom_reset', reset));
+  controls.appendChild(btn(icon('house', { size: 14 }), 'choropleth.zoom_reset', reset));
   zoomLabel = document.createElement('span');
   zoomLabel.className = 'choropleth-zoom-label';
   zoomLabel.textContent = '1.0×';

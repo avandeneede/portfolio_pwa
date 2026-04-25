@@ -1214,6 +1214,8 @@ button { font-family: inherit; }
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 .summary-box-head {
+  display: flex; align-items: center;
+  min-height: 34px;
   color: #fff;
   padding: 8px 14px;
   font-size: 12px; font-weight: 600;
@@ -1222,7 +1224,7 @@ button { font-family: inherit; }
   border-top-right-radius: 14px;
 }
 .summary-box-head-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  justify-content: space-between; gap: 8px;
 }
 .summary-box-head-row .summary-box-head-title { min-width: 0; flex: 1; }
 .summary-box-head-row .card-info-btn { color: rgba(255,255,255,0.85); width: 18px; height: 18px; }
