@@ -87,13 +87,42 @@ async function fetchOne(faName) {
   return { viewBox: vb, d };
 }
 
+// Some FA Solid 7 icons have path data that draws OUTSIDE their declared
+// viewBox (e.g. the lock shackle reaches y=-32 inside a "0 0 384 512" viewBox,
+// gear bolts protrude to y=-16 / y=528). FA's own rendering happens to clip
+// these silently because their CSS uses overflow:visible at the icon level,
+// but inside a sprite + <use> pipeline the symbol's viewBox creates an SVG
+// viewport that DOES clip. Result: visible truncation at the top/bottom of
+// affected glyphs.
+//
+// Each entry below is the actual content bbox of the path in the FA design
+// grid: [minX, minY, width, height]. normalizeToSquare uses these to size
+// the output viewBox so the full glyph fits.
+//
+// To find new offenders: build the sprite, load it in a browser, run
+// path.getBBox() on each <symbol>'s <path>, and compare against the symbol's
+// viewBox. Anything outside needs an entry here.
+const BBOX_OVERRIDES = {
+  // FA name → [minX, minY, width, height] of the actual path content.
+  'gear':            [2, -16, 510, 544],
+  'trash':           [0, -16, 448, 528],
+  'lock':            [0, -32, 384, 544],
+  'location-dot':    [0,   0, 384, 515],
+  'arrows-up-down':  [0, -32, 256, 576],
+};
+
 // Center the path inside a square viewBox so every symbol renders at the
 // same aspect ratio (consumer SVGs are square width=height). FA icons all
 // use a 512-unit design grid, but their viewBox width varies (e.g. chevron
 // is 320×512). Without normalization, narrow icons get squashed when their
 // symbol is referenced from a square parent SVG.
-function normalizeToSquare(viewBox, d) {
-  const [minX, minY, w, h] = viewBox.split(/\s+/).map(Number);
+function normalizeToSquare(viewBox, d, faName) {
+  // If the icon is in the override list, ignore FA's declared viewBox and
+  // use the true path-content bbox so nothing gets clipped.
+  const override = BBOX_OVERRIDES[faName];
+  const [minX, minY, w, h] = override
+    ? override
+    : viewBox.split(/\s+/).map(Number);
   const side = Math.max(w, h);
   const offX = (side - w) / 2 - minX;
   const offY = (side - h) / 2 - minY;
@@ -109,7 +138,7 @@ async function main() {
   const entries = await Promise.all(
     Object.entries(MAP).map(async ([alias, faName]) => {
       const { viewBox, d } = await fetchOne(faName);
-      const norm = normalizeToSquare(viewBox, d);
+      const norm = normalizeToSquare(viewBox, d, faName);
       return { alias, faName, viewBox: norm.viewBox, inner: norm.inner };
     })
   );
