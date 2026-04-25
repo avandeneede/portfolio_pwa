@@ -2387,6 +2387,32 @@ button { font-family: inherit; }
   font-size: 10px;
 }
 
+/* Mobile: in the cramped narrow-card layout the bold uppercase section
+ * headers ("VUE D'ENSEMBLE" etc.) overshadowed the actual ratio labels,
+ * and the "Action corrective ?" CTAs got truncated mid-word. Pull both
+ * down a notch and let the row labels breathe. */
+@media (max-width: 720px) {
+  .ratio-section-head-row td.ratio-section-head {
+    font-size: 9.5px;
+    padding: 5px 8px 4px;
+    letter-spacing: 0.04em;
+  }
+  .ratio-action-cta,
+  .evo-ratios-table .ratio-action-cta {
+    font-size: 10px;
+    padding: 3px 7px;
+    border-radius: 5px;
+  }
+  /* Line charts on the Evolution screen have a 720px intrinsic viewBox and
+   * scale to fit the card on mobile (~340-380px), so the 11px axis labels
+   * shrink to ~5-6px and become unreadable. Bump the user-space font-size
+   * so labels stay legible after the SVG is scaled down. The horizontal
+   * bar chart and pie chart use smaller intrinsic widths and don't need
+   * the same compensation. */
+  .chart-line text.chart-label,
+  .chart-line text.chart-value { font-size: 20px; }
+}
+
 /* Rich popover (multi-line insight: summary + up/down bullets + action callout).
  * Wider than the flat tooltip and uses inner sections for legibility. */
 .card-info-popover-rich {
