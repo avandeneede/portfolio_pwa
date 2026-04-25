@@ -120,11 +120,16 @@ function yearOf(dn) {
 // title-case the rest so the same commune doesn't appear three different
 // ways across the table ("ENGHIEN", "Enghien", "enghien"). Multi-word names
 // keep their internal hyphens / apostrophes ("Braine-l'Alleud").
+//
+// Some exports also embed the postcode inside the locality field
+// ("7850 ENGHIEN", "1180 BRUXELLES (UCCLE)"). The CP column already shows
+// it, so strip a leading 4-digit code to avoid "7850 7850 Enghien" rows.
 function cleanCommune(s) {
   if (s == null) return '';
   const str = String(s).trim();
   if (!str) return '';
-  const stripped = str.replace(/^[A-Za-z]{1,3}\s*-\s*/, '').trim();
+  let stripped = str.replace(/^[A-Za-z]{1,3}\s*-\s*/, '').trim();
+  stripped = stripped.replace(/^\d{4}\s+/, '').trim();
   return titleCaseCommune(stripped);
 }
 

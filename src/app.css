@@ -2634,6 +2634,10 @@ button { font-family: inherit; }
   aspect-ratio: 1000 / 817;
   background: var(--card);
   overflow: hidden;
+  /* Sandbox the inner z-index stack so the floating controls/tooltip/legend
+   * (z:3 inside) don't leak above the card-head's z:2 stacking context and
+   * float over the (i) info popover that drops down from the title bar. */
+  isolation: isolate;
   /* Flex centers the loading spinner before mount; absolute-positioned
    * overlays (tooltip, controls, legend, note) ignore this layout. */
   display: flex;
