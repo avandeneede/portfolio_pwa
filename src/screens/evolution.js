@@ -271,10 +271,11 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
     h('th', {}, t('report.ratio.column')),
     ...displayCols.map(({ col }) =>
       h('th', {
-        class: 'a-right',
-        style: col.isCurrent
-          ? 'background:color-mix(in srgb, var(--warning) 24%, transparent);color:var(--text);font-weight:700;'
-          : null,
+        // is-current-col is the rightmost (most recent) snapshot column.
+        // The orange tint is applied via CSS class so blue row-hover sync
+        // (also a class) can override it by source order — without that,
+        // an inline style would always win over hover.
+        class: col.isCurrent ? 'a-right is-current-col' : 'a-right',
       }, col.label)),
   ]);
 
@@ -325,10 +326,7 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
         : v.value;
 
       return h('td', {
-        class: 'a-right',
-        style: col.isCurrent
-          ? 'background:color-mix(in srgb, var(--warning) 14%, transparent);font-weight:600;'
-          : null,
+        class: col.isCurrent ? 'a-right is-current-col' : 'a-right',
       }, h('div', { class: 'ratio-cell' }, [
         h('div', { class: 'ratio-cell-value' }, valueNode),
         delta ? deltaBadge(delta) : null,

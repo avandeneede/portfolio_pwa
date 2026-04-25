@@ -1191,26 +1191,23 @@ export function renderDashboard(root, ctx, args) {
   // ratios table. For the polices-p / polices-e rows we want the count and
   // the % visually separated (same treatment as the print report, .rp-val-pct
   // is a shared inline-flex helper).
-  const ratioValueCell = (v, isCurrent) => {
+  //
+  // No orange "current column" highlight here — there's only one snapshot
+  // column on the dashboard, so tinting it "current" is redundant noise.
+  // The orange tint stays on the Evolution screen, where it actually
+  // disambiguates the most recent column from older ones.
+  const ratioValueCell = (v) => {
     const inner = (v.pct != null)
       ? h('span', { class: 'rp-val-pct' }, [
           h('span', { class: 'rp-val' }, v.value),
           h('span', { class: 'rp-pct' }, v.pct),
         ])
       : v.value;
-    return {
-      text: inner,
-      align: 'right',
-      style: isCurrent ? 'background:color-mix(in srgb, var(--warning) 14%, transparent);font-weight:600;' : null,
-    };
+    return { text: inner, align: 'right' };
   };
   const ratioColumnsConfig = [
     { label: t('report.ratio.column') },
-    ...ratioColumns.map((c) => ({
-      label: c.label,
-      align: 'right',
-      style: c.isCurrent ? 'background:color-mix(in srgb, var(--warning) 24%, transparent);color:var(--text);font-weight:700;' : null,
-    })),
+    ...ratioColumns.map((c) => ({ label: c.label, align: 'right' })),
   ];
   const sec5 = section({
     number: 5, title: t('report.s6_title'),
@@ -1244,7 +1241,7 @@ export function renderDashboard(root, ctx, args) {
                       h('span', { class: 'ratio-row-year' }, ` · ${r.year}`),
                     ])
                   : r.label,
-                ...r.values.map((v, i) => ratioValueCell(v, ratioColumns[i]?.isCurrent)),
+                ...r.values.map((v) => ratioValueCell(v)),
               ],
             });
           }

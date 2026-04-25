@@ -1094,11 +1094,28 @@ button { font-family: inherit; }
 .chart .chart-pie-slice.is-hover {
   filter: brightness(1.08) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.25));
 }
+/* "Most recent" column highlight on the Evolution ratios table. Orange tint
+ * on the header (stronger) and body cells (softer). Defined as a class so
+ * the .is-hover row sync below can override it on hovered rows — an inline
+ * style would always beat .is-hover by specificity. */
+.dash-table th.is-current-col {
+  background: color-mix(in srgb, var(--warning) 24%, transparent);
+  color: var(--text);
+  font-weight: 700;
+}
+.dash-table td.is-current-col {
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  font-weight: 600;
+}
+
 /* Hover sync uses an accent-blue tint on table rows so it doesn't get
  * confused with --fill-2 (row-total) or --fill (row-subtle). The box-shadow
  * inset on the first/last cell draws a left rail for a clear "selected"
- * feel while keeping the row height stable. */
-.dash-table tr[data-sync-key].is-hover td {
+ * feel while keeping the row height stable. Declared after .is-current-col
+ * so the blue row hover stacks above the orange column highlight when both
+ * apply — broker mental model: "I'm focused on this row right now". */
+.dash-table tr[data-sync-key].is-hover td,
+.dash-table tr[data-sync-key].is-hover td.is-current-col {
   background: rgba(0, 122, 255, 0.10);
   color: var(--text);
 }
@@ -2091,11 +2108,14 @@ button { font-family: inherit; }
  * and on each chart card head in the Evolution screen. Filled solid-accent
  * button (not a pill/tag) so it reads as a clickable action, with a small
  * border-radius and a soft shadow that says "press me, I do something". */
+/* Light-blue secondary CTA: soft accent fill with accent text. Less heavy
+ * than a primary button so dozens of these in the long ratios table read as
+ * supporting affordances rather than a sea of solid blue pills. */
 .ratio-action-cta {
   appearance: none;
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: #fff;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -2104,12 +2124,11 @@ button { font-family: inherit; }
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-  transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.06s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
 }
 .ratio-action-cta:hover {
-  background: color-mix(in srgb, var(--accent) 88%, #000);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.14);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
 }
 .ratio-action-cta:active {
   transform: translateY(1px);
