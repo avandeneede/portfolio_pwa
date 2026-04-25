@@ -364,6 +364,7 @@
   "settings.privacy.gdpr_body": "You remain the data controller for imported data. Lock your device, use a strong backup passphrase, delete stale snapshots, and export only to trusted locations.",
   "settings.storage.title": "Storage",
   "settings.storage.backend": "Backend",
+  "settings.storage.version": "Version",
   "settings.update.title": "Updates",
   "settings.update.reload": "Reload latest version",
   "settings.update.reload_hint": "Force-fetches the latest code and assets. Your data is kept.",

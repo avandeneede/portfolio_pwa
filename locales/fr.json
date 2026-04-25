@@ -364,6 +364,7 @@
   "settings.privacy.gdpr_body": "Vous êtes responsable du traitement des données importées. Limitez l'accès à votre appareil, définissez une phrase de passe forte pour les sauvegardes, et supprimez les snapshots obsolètes. Exportez uniquement vers des emplacements de confiance.",
   "settings.storage.title": "Stockage",
   "settings.storage.backend": "Backend",
+  "settings.storage.version": "Version",
   "settings.update.title": "Mises à jour",
   "settings.update.reload": "Recharger la dernière version",
   "settings.update.reload_hint": "Force le rechargement du code et des ressources. Vos données sont conservées.",

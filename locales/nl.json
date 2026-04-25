@@ -364,6 +364,7 @@
   "settings.privacy.gdpr_body": "Jij bent verwerkingsverantwoordelijke voor de geïmporteerde gegevens. Beperk toegang tot je toestel, kies een sterke back-upwachtwoordzin en verwijder verouderde momentopnamen. Exporteer enkel naar vertrouwde locaties.",
   "settings.storage.title": "Opslag",
   "settings.storage.backend": "Backend",
+  "settings.storage.version": "Versie",
   "settings.update.title": "Updates",
   "settings.update.reload": "Nieuwste versie laden",
   "settings.update.reload_hint": "Forceert het herladen van de code en bronnen. Uw gegevens blijven bewaard.",

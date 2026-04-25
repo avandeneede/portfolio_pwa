@@ -15,6 +15,7 @@ import { icon, iconTile } from '../ui/icon.js';
 import { askPassphraseModal } from '../ui/passphrase_modal.js';
 import { reparseAllSnapshots } from '../core/reparse.js';
 import { listErrors, clearErrors, formatEntry } from '../store/error_log.js';
+import { APP_VERSION } from '../version.js';
 
 // Ask the user to set a new passphrase (with confirmation). Returns the
 // passphrase or null if cancelled. The modal uses a real <form> with
@@ -706,6 +707,15 @@ export function renderSettings(root, ctx) {
           h('div', { class: 'row-title' }, t('settings.storage.backend')),
         ]),
         h('div', { class: 'row-value', 'data-backend': '' }, state.backend),
+      ]),
+      // App version. Useful when a user reports a bug — they can read this
+      // off and we know exactly which build to diff against. Matches the
+      // version stamped on every error-log entry.
+      h('div', { class: 'row' }, [
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.storage.version')),
+        ]),
+        h('div', { class: 'row-value' }, APP_VERSION),
       ]),
     ]),
 
