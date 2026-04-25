@@ -166,6 +166,54 @@ await test('db: schema + insert + fetch', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// DB: snapshot_files (raw XLSX storage for reparse feature)
+// ---------------------------------------------------------------------------
+await test('db: snapshot_files save / fetch / reset rows', async () => {
+  const db = Database.create();
+  const id = db.createSnapshot({ snapshot_date: '2026-04-23', label: 'Avril 2026' });
+  // No files yet
+  assert(db.hasSnapshotFiles(id) === false, 'hasSnapshotFiles=false on fresh snapshot');
+  assert(db.getSnapshotFiles(id).length === 0, 'getSnapshotFiles empty');
+
+  // Insert some rows + raw bytes
+  db.insertRows('clients', id, [{ dossier: 'A', dossier_key: 'A/-', nom: 'X' }]);
+  const bytes1 = new Uint8Array([1, 2, 3, 4, 5]);
+  const bytes2 = new Uint8Array([9, 8, 7]);
+  db.saveSnapshotFiles(id, [
+    { slot_type: 'clients',    filename: 'CLIENTS.xlsx',    bytes: bytes1 },
+    { slot_type: 'compagnies', filename: 'COMPAGNIES.xlsx', bytes: bytes2 },
+  ]);
+  assert(db.hasSnapshotFiles(id) === true, 'hasSnapshotFiles=true after save');
+  const files = db.getSnapshotFiles(id);
+  assert(files.length === 2, `getSnapshotFiles returns 2 (got ${files.length})`);
+  const f1 = files.find((f) => f.slot_type === 'clients');
+  assert(f1 && f1.filename === 'CLIENTS.xlsx', 'clients filename round-trips');
+  assert(f1 && f1.bytes.length === 5 && f1.bytes[0] === 1, 'clients bytes round-trip');
+
+  // Replace the clients file (INSERT OR REPLACE)
+  db.saveSnapshotFiles(id, [{ slot_type: 'clients', filename: 'NEW.xlsx', bytes: new Uint8Array([42]) }]);
+  const files2 = db.getSnapshotFiles(id);
+  assert(files2.length === 2, 'still 2 files after replace');
+  const f1b = files2.find((f) => f.slot_type === 'clients');
+  assert(f1b.filename === 'NEW.xlsx' && f1b.bytes[0] === 42, 'clients file replaced');
+
+  // deleteSnapshotRows wipes data tables but keeps snapshot + files
+  db.deleteSnapshotRows(id);
+  assert(db.fetchRows('clients', id).length === 0, 'rows gone after deleteSnapshotRows');
+  assert(db.getSnapshot(id) !== null, 'snapshot still exists after deleteSnapshotRows');
+  assert(db.hasSnapshotFiles(id) === true, 'files still there after deleteSnapshotRows');
+
+  // Files round-trip through DB export (= round-trip through .ptf)
+  const exported = db.export();
+  const db2 = Database.open(exported);
+  assert(db2.hasSnapshotFiles(id) === true, 'files survive db export/open round-trip');
+  const filesAfter = db2.getSnapshotFiles(id);
+  assert(filesAfter.length === 2, 'all files survive export/open');
+  db2.close();
+  db.close();
+});
+
+// ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
 console.log(`\n${passed} passed, ${failed} failed`);

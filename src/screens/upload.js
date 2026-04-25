@@ -115,7 +115,10 @@ export function renderUpload(root, ctx) {
         try {
           const buf = await f.arrayBuffer();
           const parsed = await parseFile(XLSX, buf, f.name);
-          return { ok: true, f, parsed };
+          // Keep the raw bytes so we can persist them alongside the parsed
+          // rows on commit. Enables full re-parse after parser/code changes
+          // without re-uploading the source file.
+          return { ok: true, f, parsed, buf };
         } catch (err) {
           return { ok: false, f, err };
         }
@@ -127,7 +130,7 @@ export function renderUpload(root, ctx) {
           continue;
         }
         if (r.parsed.type && state.slots[r.parsed.type] !== undefined) {
-          state.slots[r.parsed.type] = { parsed: r.parsed, filename: r.f.name };
+          state.slots[r.parsed.type] = { parsed: r.parsed, filename: r.f.name, buf: r.buf };
         } else {
           state.unrecognized.push({ parsed: r.parsed, filename: r.f.name });
         }
@@ -148,10 +151,23 @@ export function renderUpload(root, ctx) {
       const snapshotDate = state.date;
       const label = formatMonthYear(snapshotDate);
       const snapshotId = ctx.db.createSnapshot({ snapshot_date: snapshotDate, label });
+      const sourceFiles = [];
       for (const s of SLOTS) {
         const slot = state.slots[s.type];
         if (!slot) continue;
         ctx.db.insertRows(s.table, snapshotId, slot.parsed.rows);
+        if (slot.buf) {
+          sourceFiles.push({
+            slot_type: s.type,
+            filename: slot.filename,
+            bytes: new Uint8Array(slot.buf),
+          });
+        }
+      }
+      // Stash the raw XLSX bytes in the DB so a later parser/code change can
+      // re-derive everything without asking the broker to re-upload.
+      if (sourceFiles.length > 0) {
+        ctx.db.saveSnapshotFiles(snapshotId, sourceFiles);
       }
       await ctx.persistDb();
       toast(t('preview.confirm'), 'success');

@@ -7,8 +7,10 @@
 //   - Cache-first for everything else (static assets).
 //
 // Bump CACHE_VERSION on any release to force clients to re-fetch.
+// Keep in sync with APP_VERSION in src/version.js — that's what triggers
+// the client-side auto-reparse of stored snapshots after a parser change.
 
-const CACHE_VERSION = 'v37';
+const CACHE_VERSION = 'v38';
 const CACHE_NAME = `portefeuille-${CACHE_VERSION}`;
 
 const PRECACHE = [
@@ -18,6 +20,7 @@ const PRECACHE = [
   './src/app.css',
   './src/main.js',
   './src/router.js',
+  './src/version.js',
   './src/i18n/index.js',
   './src/ui/dom.js',
   './src/ui/toast.js',
@@ -38,6 +41,7 @@ const PRECACHE = [
   './src/core/analyzer.js',
   './src/core/branch_mapping.js',
   './src/core/ratios_summary.js',
+  './src/core/reparse.js',
   './src/screens/home.js',
   './src/screens/upload.js',
   './src/screens/preview.js',

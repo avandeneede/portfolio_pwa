@@ -76,6 +76,19 @@ CREATE TABLE IF NOT EXISTS kv (
   k TEXT PRIMARY KEY,
   v TEXT NOT NULL
 );
+
+-- Raw source XLSX files kept alongside the parsed rows. Lets the user trigger
+-- a full re-parse after parser/code changes without re-uploading. One row per
+-- (snapshot, slot_type) — replacing a slot replaces the file. Lives inside the
+-- DB BLOB so it round-trips through .ptf backups automatically.
+CREATE TABLE IF NOT EXISTS snapshot_files (
+  snapshot_id INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+  slot_type   TEXT    NOT NULL,
+  filename    TEXT    NOT NULL,
+  bytes       BLOB    NOT NULL,
+  PRIMARY KEY (snapshot_id, slot_type)
+);
+CREATE INDEX IF NOT EXISTS idx_snapfiles_snapshot ON snapshot_files(snapshot_id);
 `;
 
 const CLIENT_COLS = ['dossier','sous_dossier','dossier_key','classement','titre','nom','nom_conjoint','rue','pays','code_postal','localite','langue','date_naissance','telephone','description_telephone','fax','email','profession','physique_morale','etat_civil','sexe','forme_juridique','statut_social'];
@@ -197,6 +210,72 @@ export class Database {
       stmt.free();
     }
     return rows.length;
+  }
+
+  // ---- Snapshot source files -----------------------------------------------
+  //
+  // Files are stored as raw bytes inside the SQLite BLOB so they round-trip
+  // through .ptf backups automatically (see store/backup.js — it just wraps
+  // the DB export). One row per (snapshot_id, slot_type); replacing a slot
+  // overwrites the previous file.
+  //
+  // `files` is an array of `{ slot_type, filename, bytes (Uint8Array) }`.
+  saveSnapshotFiles(snapshotId, files) {
+    if (!files || files.length === 0) return 0;
+    const stmt = this.raw.prepare(
+      'INSERT OR REPLACE INTO snapshot_files (snapshot_id, slot_type, filename, bytes) VALUES (?,?,?,?)'
+    );
+    this.raw.run('BEGIN');
+    try {
+      for (const f of files) {
+        if (!f || !f.slot_type || !f.bytes) continue;
+        stmt.run([snapshotId, f.slot_type, f.filename || '', f.bytes]);
+      }
+      this.raw.run('COMMIT');
+    } catch (e) {
+      this.raw.run('ROLLBACK');
+      throw e;
+    } finally {
+      stmt.free();
+    }
+    return files.length;
+  }
+
+  // Returns `[{ slot_type, filename, bytes (Uint8Array) }]`. Empty array if
+  // the snapshot was created before source-file storage existed.
+  getSnapshotFiles(snapshotId) {
+    const res = this.raw.exec(
+      'SELECT slot_type, filename, bytes FROM snapshot_files WHERE snapshot_id = ?',
+      [snapshotId]
+    );
+    if (res.length === 0) return [];
+    return res[0].values.map(([slot_type, filename, bytes]) => ({
+      slot_type, filename, bytes,
+    }));
+  }
+
+  hasSnapshotFiles(snapshotId) {
+    const res = this.raw.exec(
+      'SELECT COUNT(*) FROM snapshot_files WHERE snapshot_id = ?',
+      [snapshotId]
+    );
+    if (res.length === 0) return false;
+    return Number(res[0].values[0][0]) > 0;
+  }
+
+  // Wipe data tables for a snapshot but keep the snapshot row + its source
+  // files. Used by the reparse flow before re-inserting freshly parsed rows.
+  deleteSnapshotRows(snapshotId) {
+    this.raw.run('BEGIN');
+    try {
+      for (const table of Object.keys(TABLE_META)) {
+        this.raw.run(`DELETE FROM ${table} WHERE snapshot_id = ?`, [snapshotId]);
+      }
+      this.raw.run('COMMIT');
+    } catch (e) {
+      this.raw.run('ROLLBACK');
+      throw e;
+    }
   }
 
   fetchRows(table, snapshotId) {

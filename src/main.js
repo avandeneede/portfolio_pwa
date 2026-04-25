@@ -17,6 +17,8 @@ import { renderEvolution } from './screens/evolution.js';
 import { renderSettings } from './screens/settings.js';
 import { renderTutorial } from './screens/tutorial.js';
 import { buildBranchIndex } from './core/branch_mapping.js';
+import { reparseAllSnapshots } from './core/reparse.js';
+import { APP_VERSION } from './version.js';
 
 const root = document.getElementById('root');
 
@@ -172,6 +174,37 @@ async function bootstrap() {
 
   // Mount the persistent app shell once. Screens render into #content.
   renderShell(root, ctx);
+
+  // Auto-reparse on app update. The only reason stored rows can drift from
+  // what the current code would derive is a parser/code change between the
+  // version that imported the XLSX and the version running now. Compare the
+  // version stored in `kv` to the one shipped with this build; if it changed
+  // and any snapshot has saved source files, re-run the parser across all of
+  // them. Best-effort — failures are logged and don't block startup.
+  try {
+    const stored = ctx.db.kvGet('app_version');
+    if (stored !== APP_VERSION) {
+      const snaps = ctx.db.listSnapshots() || [];
+      const hasAny = snaps.some((s) => ctx.db.hasSnapshotFiles(s.id));
+      if (hasAny) {
+        toast(t('app.auto_reparse.running').replace('{version}', APP_VERSION), 'info');
+        const result = await reparseAllSnapshots(ctx);
+        const parts = [`${result.ok} ${t('app.auto_reparse.done')}`];
+        if (result.skipped > 0) parts.push(`${result.skipped} ${t('app.auto_reparse.skipped')}`);
+        if (result.failed.length > 0) {
+          parts.push(`${result.failed.length} ${t('app.auto_reparse.failed')}`);
+          for (const f of result.failed) console.warn('[auto-reparse]', f);
+        }
+        toast(parts.join(' · '), result.failed.length > 0 ? 'warning' : 'success');
+      }
+      ctx.db.kvSet('app_version', APP_VERSION);
+      // Persist the version bump (and any reparse rows). Don't await — the
+      // home route render shouldn't wait on disk I/O.
+      schedulePersist();
+    }
+  } catch (e) {
+    console.warn('[auto-reparse] skipped', e);
+  }
 
   // Refresh sidebar active-state on every route change
   window.addEventListener('hashchange', () => refreshSidebar(ctx));

@@ -13,6 +13,7 @@ import {
 } from '../store/cloud_sync.js';
 import { icon, iconTile } from '../ui/icon.js';
 import { askPassphraseModal } from '../ui/passphrase_modal.js';
+import { reparseAllSnapshots } from '../core/reparse.js';
 
 // Ask the user to set a new passphrase (with confirmation). Returns the
 // passphrase or null if cancelled. The modal uses a real <form> with
@@ -274,6 +275,33 @@ export function renderSettings(root, ctx) {
     } catch (e) {
       console.error(e);
       toast(t('error.generic') + ' ' + e.message, 'danger');
+      state.busy = false;
+    }
+  }
+
+  // Walk every snapshot that has saved source XLSX bytes and re-run the
+  // parser. Snapshots without saved files (legacy / pre-feature) are skipped
+  // silently. Keeps every snapshot's stored data fresh after parser changes.
+  async function handleReparseAll() {
+    if (state.busy) return;
+    if (!window.confirm(t('settings.update.reparse_all_confirm'))) return;
+    state.busy = true;
+    try {
+      const result = await reparseAllSnapshots(ctx);
+      const parts = [];
+      parts.push(`${result.ok} ${t('settings.update.reparse_all_done')}`);
+      if (result.skipped > 0) parts.push(`${result.skipped} ${t('settings.update.reparse_all_skipped')}`);
+      if (result.failed.length > 0) {
+        parts.push(`${result.failed.length} ${t('settings.update.reparse_all_failed')}`);
+        for (const f of result.failed) console.warn('[reparse-all]', f);
+      }
+      const tone = result.failed.length > 0 ? 'warning' : 'success';
+      toast(parts.join(' · '), tone);
+      if (typeof ctx.render === 'function') ctx.render(renderSettings);
+    } catch (e) {
+      console.error(e);
+      toast(t('error.generic') + ' ' + e.message, 'danger');
+    } finally {
       state.busy = false;
     }
   }
@@ -590,6 +618,14 @@ export function renderSettings(root, ctx) {
         h('div', { class: 'row-main' }, [
           h('div', { class: 'row-title' }, t('settings.update.reload')),
           h('div', { class: 'row-sub' }, t('settings.update.reload_hint')),
+        ]),
+        h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
+      ]),
+      h('div', { class: 'row interactive', onClick: handleReparseAll }, [
+        iconTile('arrow.clockwise', '--purple'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.update.reparse_all')),
+          h('div', { class: 'row-sub' }, t('settings.update.reparse_all_hint')),
         ]),
         h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
       ]),

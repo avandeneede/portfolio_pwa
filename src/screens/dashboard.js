@@ -12,6 +12,7 @@ import { icon, iconTile } from '../ui/icon.js';
 import { pieChart, hBarChart, vBarChart } from '../ui/charts.js';
 import { renderReport, printReport } from './report.js';
 import { exportClientTotalXlsx, exportOppXlsx, downloadBlob, buildClientTotalFilename, buildOppFilename } from '../store/xlsx_export.js';
+import { reparseSnapshot } from '../core/reparse.js';
 
 // -----------------------------------------------------------------------------
 // UI primitives
@@ -393,19 +394,27 @@ export function renderDashboard(root, ctx, args) {
     }
   }
 
-  // Re-derive every statistic from the stored rows. Stats are already computed
-  // on each render, so this is equivalent to re-entering the route — but the
-  // button exists to make that guarantee discoverable, and to pick up changes
-  // to branch_mapping.json or locale-driven values without a full reload.
-  function handleRecompute() {
+  // Full re-parse from the stored XLSX bytes: useful when the parser, the
+  // detect heuristics, or the schema changed and the persisted rows are stale.
+  // Recompute (below) only re-runs analyzer.js on already-parsed rows.
+  async function handleReparse() {
+    if (!ctx.db.hasSnapshotFiles(snapshotId)) {
+      toast(t('dashboard.reparse_no_files'), 'warning');
+      return;
+    }
+    if (!confirm(t('dashboard.reparse_confirm'))) return;
     try {
+      await reparseSnapshot(ctx, snapshotId);
+      toast(t('dashboard.reparsed'), 'success');
       if (typeof ctx.render === 'function') {
         ctx.render(renderDashboard, { snapshotId });
-        toast(t('dashboard.recomputed'), 'success');
       }
     } catch (e) {
       console.error(e);
-      toast(t('error.generic') + ' ' + e.message, 'danger');
+      const msg = e.message === 'NO_SOURCE_FILES'
+        ? t('dashboard.reparse_no_files')
+        : t('error.generic') + ' ' + e.message;
+      toast(msg, 'danger');
     }
   }
 
@@ -455,15 +464,20 @@ export function renderDashboard(root, ctx, args) {
         icon('calendar', { size: 16 }),
         h('span', {}, t('dashboard.edit_date')),
       ]),
-      h('button', {
+      // "Reparse" re-runs the parser on the original XLSX bytes (saved at
+      // upload time) so snapshots stay in sync after parser/code changes.
+      // Auto-runs on app update from main.js; this button is the manual
+      // override. Hidden when no source files are available (legacy snapshots
+      // imported before this feature shipped, or older .ptf backups).
+      ctx.db.hasSnapshotFiles(snapshotId) ? h('button', {
         class: 'btn ghost',
         type: 'button',
-        onClick: handleRecompute,
-        title: t('dashboard.recompute_hint'),
+        onClick: handleReparse,
+        title: t('dashboard.reparse_hint'),
       }, [
         icon('arrow.clockwise', { size: 16 }),
-        h('span', {}, t('dashboard.recompute')),
-      ]),
+        h('span', {}, t('dashboard.reparse')),
+      ]) : null,
       h('button', {
         class: 'btn primary',
         type: 'button',
