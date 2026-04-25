@@ -35,3 +35,42 @@ export function mount(container, ...nodes) {
     if (n != null && n !== false) container.appendChild(n instanceof Node ? n : document.createTextNode(String(n)));
   }
 }
+
+// Open-one-at-a-time popover helper. Every info button across the app uses
+// the same shape: <button>...</button><div class="card-info-popover">…</div>
+// where the popover is the button's nextElementSibling. Centralising the
+// toggle here gives us two guarantees brokers asked for:
+//   1. Opening a new popover closes any other open popover (single-open).
+//   2. A global outside-click handler closes whatever is open.
+export function togglePopover(triggerBtn) {
+  const pop = triggerBtn.nextElementSibling;
+  if (!pop || !pop.classList.contains('card-info-popover')) return;
+  const willOpen = !pop.classList.contains('is-open');
+  document.querySelectorAll('.card-info-popover.is-open').forEach((p) => {
+    if (p !== pop) p.classList.remove('is-open');
+  });
+  pop.classList.toggle('is-open', willOpen);
+}
+
+// Wire the global outside-click handler exactly once. Safe to call at module
+// load time — `installed` guards against duplicates if the bundle is hot-
+// reloaded in a dev session.
+let popoverOutsideClickInstalled = false;
+export function installPopoverOutsideClick() {
+  if (popoverOutsideClickInstalled) return;
+  popoverOutsideClickInstalled = true;
+  document.addEventListener('click', (e) => {
+    const open = document.querySelectorAll('.card-info-popover.is-open');
+    if (!open.length) return;
+    const target = e.target;
+    for (const p of open) {
+      // Click inside the popover itself: leave it alone.
+      if (p.contains(target)) continue;
+      // Click on the trigger button (the popover's previous sibling): the
+      // button's own onclick handles toggling; don't double-close here.
+      if (p.previousElementSibling && p.previousElementSibling.contains(target)) continue;
+      p.classList.remove('is-open');
+    }
+  });
+}
+installPopoverOutsideClick();

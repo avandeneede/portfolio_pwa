@@ -2,7 +2,7 @@
 // Reads computed stats from analyzer, renders KPI hero + 5 colored sections,
 // SVG charts, and export actions (PDF report + CLIENT TOTAL xlsx).
 
-import { h, mount } from '../ui/dom.js';
+import { h, mount, togglePopover } from '../ui/dom.js';
 import { t } from '../i18n/index.js';
 import { toast } from '../ui/toast.js';
 import { formatInt, formatCurrency, formatPercent, formatDate, formatMonthYear, branchLabel } from '../ui/format.js';
@@ -43,8 +43,7 @@ function infoPopover(text) {
     title: text,
     onclick: (e) => {
       e.stopPropagation();
-      const pop = e.currentTarget.nextElementSibling;
-      if (pop) pop.classList.toggle('is-open');
+      togglePopover(e.currentTarget);
     },
   }, icon('info.circle', { size: 14 }));
   const pop = h('div', { class: 'card-info-popover', role: 'tooltip' }, text);
@@ -185,8 +184,7 @@ function cardHead(title, infoText) {
     title: infoText || '',
     onclick: (e) => {
       e.stopPropagation();
-      const pop = e.currentTarget.nextElementSibling;
-      if (pop) pop.classList.toggle('is-open');
+      togglePopover(e.currentTarget);
     },
   }, icon('info.circle', { size: 16 }));
   const pop = h('div', { class: 'card-info-popover', role: 'tooltip' }, infoText || '');
@@ -602,14 +600,25 @@ export function renderDashboard(root, ctx, args) {
               { total: true, cells: [t('common.total'), formatInt(ov.active_clients), '100%'] },
             ]
           ),
+          // Sans-police table: standalone (no `key:` on rows). Brokers used
+          // to see these rows highlight in sync with the active-clients pie
+          // chart, which was misleading since "sans police" clients aren't
+          // represented in that pie at all. Same 3-column shape as the
+          // active table above (label / count / %), with % computed against
+          // the inactive total so the row reads "X% of inactive clients".
           simpleTable(
             [{ label: t('report.sans_police') },
-             { label: t('report.count'), align: 'right' }],
-            [
-              { key: 'seg:part', cells: [t('report.particuliers'), formatInt(ov.sans_police_particuliers)] },
-              { key: 'seg:ent', cells: [t('report.entreprises'), formatInt(ov.sans_police_entreprises)] },
-              { total: true, cells: [t('common.total'), formatInt(ov.clients_sans_police)] },
-            ]
+             { label: t('report.count'), align: 'right' },
+             { label: '%', align: 'right' }],
+            (() => {
+              const tot = ov.clients_sans_police || 0;
+              const pct = (n) => tot ? formatPercent(n / tot * 100, 1) : '0%';
+              return [
+                { cells: [t('report.particuliers'), formatInt(ov.sans_police_particuliers), pct(ov.sans_police_particuliers)] },
+                { cells: [t('report.entreprises'), formatInt(ov.sans_police_entreprises), pct(ov.sans_police_entreprises)] },
+                { total: true, cells: [t('common.total'), formatInt(ov.clients_sans_police), '100%'] },
+              ];
+            })()
           ),
         ]),
         h('div', { class: 'card-split-chart chart-wrap' }, [

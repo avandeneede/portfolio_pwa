@@ -2073,31 +2073,43 @@ button { font-family: inherit; }
   padding: 0;
 }
 
-/* Per-row "Action corrective ?" CTA. Replaces the (i) icon with a small
- * blue text button so the job-to-be-done reads at a glance. Same popover
- * behaviour as before — the click toggles the sibling .card-info-popover. */
+/* "Action corrective ?" CTA. Used both per-row in the ratios summary table
+ * and on each chart card head in the Evolution screen. Filled solid-accent
+ * button (not a pill/tag) so it reads as a clickable action, with a small
+ * border-radius and a soft shadow that says "press me, I do something". */
 .ratio-action-cta {
   appearance: none;
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: var(--accent);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.01em;
-  padding: 3px 10px;
-  border-radius: 999px;
+  letter-spacing: 0;
+  padding: 5px 11px;
+  border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.06s ease;
 }
 .ratio-action-cta:hover {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.14);
+}
+.ratio-action-cta:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.12) inset;
 }
 .ratio-action-cta:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+/* Smaller variant when used inline in dense table rows. */
+.evo-ratios-table .ratio-action-cta {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 5px;
 }
 
 /* Section header rows in the ratios summary tables. Group the long list into

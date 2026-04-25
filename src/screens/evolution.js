@@ -12,7 +12,7 @@
 // to spot drift early (e.g. data quality slipping, ageing client base,
 // rising claim frequency) without having to eyeball the chart grid.
 
-import { h, mount } from '../ui/dom.js';
+import { h, mount, togglePopover } from '../ui/dom.js';
 import { t } from '../i18n/index.js';
 import { toast } from '../ui/toast.js';
 import { formatInt, formatCurrency, formatDate } from '../ui/format.js';
@@ -159,21 +159,22 @@ export function renderEvolution(root, ctx) {
       date: snapshot.snapshot_date,
       value: metric.pick(stats) || 0,
     }));
-    // Info button + popover: same pattern as dashboard.js cardHead. Click toggles
-    // the sibling popover's `is-open`; it carries the human-language explanation
-    // of what an up/down move on this particular curve means for the broker.
+    // Per-chart CTA: same "Action corrective ?" button as the ratios table
+    // rows. Reads as a clear job-to-be-done ("show me what to do about this
+    // curve") instead of a generic (i) icon. Opens the same structured
+    // popover (summary + up/down bullets + corrective action callout).
     const insight = t(metric.insightKey);
+    const ctaLabel = t('evolution.ratio_insight.cta_label');
     const infoBtn = h('button', {
-      class: 'card-info-btn',
+      class: 'ratio-action-cta',
       type: 'button',
-      'aria-label': 'Info',
+      'aria-label': ctaLabel,
       title: stripInsightMarkers(insight),
       onclick: (e) => {
         e.stopPropagation();
-        const pop = e.currentTarget.nextElementSibling;
-        if (pop) pop.classList.toggle('is-open');
+        togglePopover(e.currentTarget);
       },
-    }, icon('info.circle', { size: 16 }));
+    }, ctaLabel);
     const infoPop = h('div',
       { class: 'card-info-popover card-info-popover-rich', role: 'tooltip' },
       renderRichInsight(insight));
@@ -257,8 +258,7 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
       title: stripInsightMarkers(text),
       onclick: (e) => {
         e.stopPropagation();
-        const pop = e.currentTarget.nextElementSibling;
-        if (pop) pop.classList.toggle('is-open');
+        togglePopover(e.currentTarget);
       },
     }, ctaLabel);
     const pop = h('div',
@@ -348,8 +348,7 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
       title: desc,
       onclick: (e) => {
         e.stopPropagation();
-        const pop = e.currentTarget.nextElementSibling;
-        if (pop) pop.classList.toggle('is-open');
+        togglePopover(e.currentTarget);
       },
     }, icon('info.circle', { size: 16 }));
     const pop = h('div', { class: 'card-info-popover', role: 'tooltip' }, desc);
