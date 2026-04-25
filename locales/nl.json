@@ -28,8 +28,8 @@
   "evolution.insight.active_clients": "Klanten met minstens één lopende polis. Dit is de echte basis van uw activiteit: het verschil met het totaal meet de erosie van de portefeuille.",
   "evolution.insight.total_polices": "Totaal volume actieve contracten. Sneller stijgen dan het aantal klanten wijst op meer multi-uitrusting.",
   "evolution.insight.avg_polices": "Gemiddeld aantal polissen per actieve klant. Een sleutelindicator voor loyaliteit: hoe hoger, hoe meer uw klanten aan uw kantoor gehecht zijn.",
-  "evolution.insight.total_premium": "Jaarlijkse omzet gedragen door de portefeuille. Vergelijk met de groei van het aantal klanten om te zien of u opwaardeert in gamma of in volume.",
-  "evolution.insight.avg_premium": "Gemiddelde premie per actieve klant. Meet de eenheidswaarde: een daling wijst op churn bij grote dossiers of concentratie op kleine contracten.",
+  "evolution.insight.total_premium": "Jaarlijkse recurrente premie van de IARD-portefeuille (niet-leven). Sluit 'Vie et placements' (Tak 21/23), eenmalige premies en vrije stortingen uit, zodat de trend tussen snapshots vergelijkbaar blijft. Vergelijk met de groei van het aantal klanten om te zien of u opwaardeert in gamma of in volume.",
+  "evolution.insight.avg_premium": "Gemiddelde jaarlijkse recurrente premie per actieve IARD-klant (zelfde uitsluitingen als het totaal). Meet de eenheidswaarde: een daling wijst op churn bij grote dossiers of concentratie op kleine contracten.",
   "evolution.insight.total_sinistres": "Aantal aangegeven schadegevallen in het lopende jaar. Te volgen om risicotakken op te sporen en de tarifering bij te sturen.",
   "evolution.insight.mono_policy_clients": "Klanten met één enkele polis: het prioritaire cross-selldoelwit. Een daling geeft aan dat uw opvolgingsacties werken.",
 
@@ -217,6 +217,7 @@
   "kpi.total_polices": "Polissen",
   "kpi.avg_polices": "polissen / klant",
   "kpi.total_premium": "Totale premies",
+  "kpi.total_premium_info": "Jaarlijkse recurrente premie van de IARD-portefeuille (niet-leven). Sluit 'Vie et placements' (Tak 21/23 leven/belegging) uit: hun 'Prime totale annuelle' bevat vaak het belegde kapitaal en is niet vergelijkbaar tussen contracten. Sluit ook eenmalige premies ('Prime unique') en vrije stortingen ('Versement libre') uit — die zijn geen jaarlijks recurrente bedragen. Het gemiddelde per klant gebruikt dezelfde uitsluitingen.",
   "kpi.total_commission": "Totale commissies",
   "kpi.sinistres": "Schadegevallen",
   "kpi.clients_with_sinistres": "betrokken klanten",

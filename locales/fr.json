@@ -28,8 +28,8 @@
   "evolution.insight.active_clients": "Clients avec au moins une police en cours. C'est la base réelle de votre activité : la différence avec le total mesure l'érosion du portefeuille.",
   "evolution.insight.total_polices": "Volume total de contrats actifs. Une hausse plus rapide que celle des clients indique davantage de multi-équipement.",
   "evolution.insight.avg_polices": "Nombre moyen de polices par client actif. Un indicateur clé de fidélisation : plus c'est haut, plus vos clients sont attachés à votre cabinet.",
-  "evolution.insight.total_premium": "Chiffre d'affaires annuel porté par le portefeuille. À comparer à la croissance du nombre de clients pour voir si vous montez en gamme ou en volume.",
-  "evolution.insight.avg_premium": "Prime moyenne par client actif. Mesure la valeur unitaire : une baisse signale du churn sur les gros dossiers ou une concentration sur des petits contrats.",
+  "evolution.insight.total_premium": "Prime récurrente annuelle du portefeuille IARD (non-vie). Exclut « Vie et placements » (Branche 21/23), les primes uniques et les versements libres, pour que la tendance reste comparable d'un snapshot à l'autre. À comparer à la croissance du nombre de clients pour voir si vous montez en gamme ou en volume.",
+  "evolution.insight.avg_premium": "Prime récurrente annuelle moyenne par client IARD actif (mêmes exclusions que le total). Mesure la valeur unitaire : une baisse signale du churn sur les gros dossiers ou une concentration sur des petits contrats.",
   "evolution.insight.total_sinistres": "Nombre de sinistres déclarés sur l'année en cours. À suivre pour détecter les branches à risque et ajuster la tarification.",
   "evolution.insight.mono_policy_clients": "Clients avec une seule police : la cible prioritaire de cross-sell. Une baisse indique que vos actions de rebond fonctionnent.",
 
@@ -217,6 +217,7 @@
   "kpi.total_polices": "Polices",
   "kpi.avg_polices": "polices / client",
   "kpi.total_premium": "Primes totales",
+  "kpi.total_premium_info": "Prime récurrente annuelle du portefeuille IARD (non-vie). Exclut « Vie et placements » (produits Branche 21/23) : leur « Prime totale annuelle » contient souvent le capital investi et n'est pas comparable d'un contrat à l'autre. Exclut aussi les primes uniques (« Prime unique ») et les versements libres, qui ne sont pas des montants annuels récurrents. La moyenne par client utilise les mêmes exclusions.",
   "kpi.total_commission": "Commissions totales",
   "kpi.sinistres": "Sinistres",
   "kpi.clients_with_sinistres": "clients concernés",

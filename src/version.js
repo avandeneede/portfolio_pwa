@@ -7,4 +7,4 @@
 // The auto-reparse trigger lives in main.js: when bootstrap sees that the
 // version stored in the DB's `kv` table differs from this constant, it runs
 // reparseAllSnapshots once and writes the new version back.
-export const APP_VERSION = 'v39';
+export const APP_VERSION = 'v40';

@@ -787,6 +787,13 @@ button { font-family: inherit; }
   font-size: 11px; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
 }
+/* When a KPI tile carries an info popover, the label and the info button sit
+ * on the same line so the value below stays full-width. */
+.kpi-label-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+}
+.kpi-label-row .kpi-label { min-width: 0; flex: 1; }
+.kpi-label-row .card-info-btn { width: 18px; height: 18px; }
 .kpi-value {
   font-size: 26px; font-weight: 700; letter-spacing: -0.02em;
   margin-top: 4px; font-variant-numeric: tabular-nums;

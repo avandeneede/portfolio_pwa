@@ -18,12 +18,37 @@ import { reparseSnapshot } from '../core/reparse.js';
 // UI primitives
 // -----------------------------------------------------------------------------
 
-function kpi(label, value, sub, tint) {
+function kpi(label, value, sub, tint, info) {
+  // The optional `info` string adds a small popover beside the label so we can
+  // disclose definitions that don't fit on the tile (e.g. which premium types
+  // are excluded from the total). Reuses the .card-info-* primitives.
+  const labelEl = info
+    ? h('div', { class: 'kpi-label-row' }, [
+        h('div', { class: 'kpi-label' }, label),
+        infoPopover(info),
+      ])
+    : h('div', { class: 'kpi-label' }, label);
   return h('div', { class: 'kpi', style: tint ? { borderTopColor: `var(${tint})` } : null }, [
-    h('div', { class: 'kpi-label' }, label),
+    labelEl,
     h('div', { class: 'kpi-value' }, value),
     sub ? h('div', { class: 'kpi-sub' }, sub) : null,
   ]);
+}
+
+function infoPopover(text) {
+  const btn = h('button', {
+    class: 'card-info-btn',
+    type: 'button',
+    'aria-label': 'Info',
+    title: text,
+    onclick: (e) => {
+      e.stopPropagation();
+      const pop = e.currentTarget.nextElementSibling;
+      if (pop) pop.classList.toggle('is-open');
+    },
+  }, icon('info.circle', { size: 14 }));
+  const pop = h('div', { class: 'card-info-popover', role: 'tooltip' }, text);
+  return h('div', { class: 'card-head-info' }, [btn, pop]);
 }
 
 function section(opts, body) {
@@ -513,7 +538,8 @@ export function renderDashboard(root, ctx, args) {
     kpi(t('kpi.total_polices'), formatInt(kpiS.total_polices),
       `${kpiS.avg_polices_per_client} ${t('kpi.avg_polices')}`, '--indigo'),
     kpi(t('kpi.total_premium'), formatCurrency(kpiS.total_premium),
-      `${formatCurrency(kpiS.avg_premium_per_client)} / client`, '--teal'),
+      `${formatCurrency(kpiS.avg_premium_per_client)} / client`, '--teal',
+      t('kpi.total_premium_info')),
     kpi(t('kpi.total_commission'),
       hasCommission ? formatCurrency(kpiS.total_commission) : t('common.not_available'),
       hasCommission ? `${formatCurrency(kpiS.avg_commission_per_client)} / client` : null,

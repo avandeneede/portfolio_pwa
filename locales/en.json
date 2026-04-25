@@ -28,8 +28,8 @@
   "evolution.insight.active_clients": "Clients with at least one live policy. This is the real base of your activity — the gap with the total measures portfolio erosion.",
   "evolution.insight.total_polices": "Total volume of live contracts. Rising faster than client count means more multi-equipment per client.",
   "evolution.insight.avg_polices": "Average policies per active client. A key loyalty indicator: the higher it goes, the more attached your clients are to your office.",
-  "evolution.insight.total_premium": "Annual revenue carried by the portfolio. Compare with client growth to see if you're moving upmarket or just adding volume.",
-  "evolution.insight.avg_premium": "Average premium per active client. Measures unit value: a drop signals churn on big accounts or concentration on small contracts.",
+  "evolution.insight.total_premium": "Annual recurring premium on the IARD (non-life) book. Excludes 'Vie et placements' (Branche 21/23) along with single-shot premiums and free top-ups, so the trend is comparable across snapshots. Compare with client growth to see if you're moving upmarket or just adding volume.",
+  "evolution.insight.avg_premium": "Average annual recurring premium per active IARD client (same exclusions as the total). Measures unit value: a drop signals churn on big accounts or concentration on small contracts.",
   "evolution.insight.total_sinistres": "Claims reported in the current year. Watch it to spot risky branches and adjust pricing.",
   "evolution.insight.mono_policy_clients": "Clients with a single policy — your prime cross-sell target. A drop means your follow-up campaigns are working.",
 
@@ -217,6 +217,7 @@
   "kpi.total_polices": "Policies",
   "kpi.avg_polices": "policies / client",
   "kpi.total_premium": "Total premiums",
+  "kpi.total_premium_info": "Annual recurring premium across the IARD (non-life) book. Excludes 'Vie et placements' (Branche 21/23 life/investment products) — their 'Prime totale annuelle' often holds the invested capital and isn't comparable across contracts. Also excludes single-shot premiums ('Prime unique') and free top-ups ('Versement libre'), which aren't annual recurring figures. The per-client average uses the same exclusions.",
   "kpi.total_commission": "Total commissions",
   "kpi.sinistres": "Claims",
   "kpi.clients_with_sinistres": "clients affected",
