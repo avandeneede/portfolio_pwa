@@ -1035,7 +1035,7 @@ button { font-family: inherit; }
  * Default to a single wide column; allow two columns only on very wide
  * viewports. Each card still fills its grid cell. */
 .dash-grid.dash-grid-evolution {
-  grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr));
   gap: 24px;
 }
 .dash-grid.dash-grid-3 {
