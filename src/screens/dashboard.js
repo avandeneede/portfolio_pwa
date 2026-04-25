@@ -3,6 +3,7 @@
 // SVG charts, and export actions (PDF report + CLIENT TOTAL xlsx).
 
 import { h, mount, togglePopover } from '../ui/dom.js';
+import { renderInfoText, stripInfoMarkers } from '../ui/info_text.js';
 import { t } from '../i18n/index.js';
 import { toast } from '../ui/toast.js';
 import { formatInt, formatCurrency, formatPercent, formatDate, formatMonthYear, branchLabel } from '../ui/format.js';
@@ -37,17 +38,25 @@ function kpi(label, value, sub, tint, info) {
 }
 
 function infoPopover(text) {
+  // Same trigger+popover shape as cardHead. Routed through renderInfoText so
+  // a string with `• ↑ ↓ 🛠` markers renders as a structured hierarchy
+  // (intro paragraph + bullets + corrective-action callout) while plain
+  // prose still renders as a single paragraph — back-compat for legacy
+  // info strings.
+  const flatText = stripInfoMarkers(text);
   const btn = h('button', {
     class: 'card-info-btn',
     type: 'button',
     'aria-label': t('common.show_info') || 'Info',
-    title: text,
+    title: flatText,
     onclick: (e) => {
       e.stopPropagation();
       togglePopover(e.currentTarget);
     },
   }, icon('info.circle', { size: 14 }));
-  const pop = h('div', { class: 'card-info-popover', role: 'tooltip' }, text);
+  const pop = h('div',
+    { class: 'card-info-popover card-info-popover-rich', role: 'tooltip' },
+    renderInfoText(text, { actionLabel: t('evolution.ratio_insight.action_label') }));
   return h('div', { class: 'card-head-info' }, [btn, pop]);
 }
 
@@ -176,19 +185,25 @@ function simpleTable(columns, rows) {
 }
 
 // Card head: title + info-icon popover (click/hover). The info text now lives
-// in a popover so it doesn't eat vertical space in the card body.
+// in a popover so it doesn't eat vertical space in the card body. Body is
+// rendered through renderInfoText so locale strings can use `• ↑ ↓ 🛠`
+// markers for structured layout — legacy plain-prose strings still work.
 function cardHead(title, infoText) {
+  const flatText = stripInfoMarkers(infoText || '');
   const btn = h('button', {
     class: 'card-info-btn',
     type: 'button',
     'aria-label': t('common.show_info') || 'Info',
-    title: infoText || '',
+    title: flatText,
     onclick: (e) => {
       e.stopPropagation();
       togglePopover(e.currentTarget);
     },
   }, icon('info.circle', { size: 16 }));
-  const pop = h('div', { class: 'card-info-popover', role: 'tooltip' }, infoText || '');
+  const pop = h('div',
+    { class: 'card-info-popover card-info-popover-rich', role: 'tooltip' },
+    renderInfoText(infoText || '',
+      { actionLabel: t('evolution.ratio_insight.action_label') }));
   return h('div', { class: 'card-head' }, [
     h('h3', { class: 'card-h3' }, title),
     infoText ? h('div', { class: 'card-head-info' }, [btn, pop]) : null,

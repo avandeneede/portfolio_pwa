@@ -285,6 +285,10 @@ export function lineChart(points, opts = {}) {
   const vsPrevLabel = opts.vsPrevLabel || 'vs previous';
   const vsFirstLabel = opts.vsFirstLabel || 'since start';
   const noDataLabel = opts.noDataLabel || 'no data';
+  // direction: 'up_good' | 'up_bad' | 'neutral'. Decides whether a positive
+  // delta colours green or red in the tooltip. For sinistres or mono-police,
+  // a rising line is bad news — colouring it green would be misleading.
+  const direction = opts.direction || 'up_good';
 
   // overflow: visible lets value labels near the edges (leftmost/rightmost
   // dots or the topmost dot) paint outside the viewBox instead of being
@@ -440,19 +444,27 @@ export function lineChart(points, opts = {}) {
   // Reusable tooltip. Built once, repositioned on hover/click. Rendered via
   // foreignObject so we can style it with regular CSS, and anchored at the
   // end of the SVG tree so it paints above dots and lines.
+  //
+  // Initial display:none has to be set via CSSOM, not via the `style="..."`
+  // attribute: index.html ships CSP `style-src 'self'` (no 'unsafe-inline'),
+  // so the attribute path is silently dropped by the browser and we'd render
+  // an empty white tooltip at (0,0) by default. The CSSOM property setter
+  // path is allowed under that policy.
   const tipW = 180;
   const tipH = 96;
   const tipFo = svg('foreignObject', {
     x: 0, y: 0, width: tipW, height: tipH,
     class: 'chart-tip-fo',
-    style: 'overflow: visible; pointer-events: none; display: none;',
   });
+  tipFo.style.overflow = 'visible';
+  tipFo.style.pointerEvents = 'none';
+  tipFo.style.display = 'none';
   const tipEl = document.createElement('div');
   tipEl.className = 'chart-tip';
   tipFo.appendChild(tipEl);
 
   function showTip(p, x, y) {
-    renderTooltip(tipEl, p, { valueFmt, dateFmt, vsPrevLabel, vsFirstLabel, noDataLabel });
+    renderTooltip(tipEl, p, { valueFmt, dateFmt, vsPrevLabel, vsFirstLabel, noDataLabel, direction });
     let tx = x - tipW / 2;
     let ty = y - tipH - 14;
     if (tx < 2) tx = 2;
@@ -533,17 +545,21 @@ function renderTooltip(tipEl, p, opts) {
 
   if (!p.isZero) {
     if (p.deltaPrev != null) {
-      tipEl.appendChild(deltaRow(opts.vsPrevLabel, p.deltaPrev));
+      tipEl.appendChild(deltaRow(opts.vsPrevLabel, p.deltaPrev, opts.direction));
     }
     if (p.deltaFirst != null) {
-      tipEl.appendChild(deltaRow(opts.vsFirstLabel, p.deltaFirst));
+      tipEl.appendChild(deltaRow(opts.vsFirstLabel, p.deltaFirst, opts.direction));
     }
   }
 }
 
-function deltaRow(label, pct) {
+function deltaRow(label, pct, direction) {
   const row = document.createElement('div');
-  row.className = 'chart-tip-delta ' + deltaTone(pct);
+  // Tone classes are *semantic* (good/bad/neutral) so coloring matches what
+  // the broker actually wants — a rising sinistres curve renders red, not
+  // green. The legacy 'up'/'down' classes are kept as aliases (see CSS) so
+  // older callers without a direction still get green-up by default.
+  row.className = 'chart-tip-delta ' + deltaTone(pct, direction);
   const name = document.createElement('span');
   name.className = 'chart-tip-delta-label';
   name.textContent = label;
@@ -555,10 +571,12 @@ function deltaRow(label, pct) {
   return row;
 }
 
-function deltaTone(pct) {
-  if (pct > 0.05) return 'up';
-  if (pct < -0.05) return 'down';
-  return 'neutral';
+function deltaTone(pct, direction) {
+  if (Math.abs(pct) <= 0.05) return 'neutral';
+  if (direction === 'neutral') return 'neutral';
+  const goingUp = pct > 0;
+  const isGood = direction === 'up_bad' ? !goingUp : goingUp;
+  return isGood ? 'good' : 'bad';
 }
 
 function formatSignedPct(pct) {

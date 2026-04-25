@@ -13,6 +13,7 @@
 // rising claim frequency) without having to eyeball the chart grid.
 
 import { h, mount, togglePopover } from '../ui/dom.js';
+import { renderInfoText, stripInfoMarkers } from '../ui/info_text.js';
 import { t } from '../i18n/index.js';
 import { toast } from '../ui/toast.js';
 import { formatInt, formatCurrency, formatDate } from '../ui/format.js';
@@ -24,33 +25,47 @@ import { buildRatiosSummary, ratioSectionTitle } from '../core/ratios_summary.js
 // Each metric: how to pull the value out of stats, how to format, what colour,
 // plus a thematic icon and an `insightKey` pointing at the i18n string shown
 // in the info popover (explains what reading the curve tells the broker).
+//
+// `direction` decides how the line-chart tooltip colours its delta arrows:
+//   'up_good' → rising = green (aligned with broker objective)
+//   'up_bad'  → rising = red (working against broker objective)
+//   'neutral' → never colour-loaded; broker strategy decides
+// Mirrors DIRECTION_GOODNESS below for the ratios table.
 const METRICS = [
   { key: 'total_clients',       titleKey: 'kpi.total_clients',       tint: '--accent',
     iconName: 'person.2',            insightKey: 'evolution.insight.total_clients',
+    direction: 'up_good',
     pick: (s) => s.kpi_summary.total_clients, fmt: formatInt },
   { key: 'active_clients',      titleKey: 'kpi.active_clients',      tint: '--indigo',
     iconName: 'person.crop.circle',  insightKey: 'evolution.insight.active_clients',
+    direction: 'up_good',
     pick: (s) => s.kpi_summary.active_clients, fmt: formatInt },
   { key: 'total_polices',       titleKey: 'kpi.total_polices',       tint: '--purple',
     iconName: 'doc.text',            insightKey: 'evolution.insight.total_polices',
+    direction: 'up_good',
     pick: (s) => s.kpi_summary.total_polices, fmt: formatInt },
   { key: 'avg_polices',         titleKey: 'kpi.avg_polices',         tint: '--teal',
     iconName: 'doc.on.doc',          insightKey: 'evolution.insight.avg_polices',
+    direction: 'up_good',
     pick: (s) => s.kpi_summary.avg_polices_per_client,
     fmt: (v) => (v || 0).toFixed(2) },
   { key: 'total_premium',       titleKey: 'kpi.total_premium',       tint: '--success',
     iconName: 'briefcase',           insightKey: 'evolution.insight.total_premium',
+    direction: 'up_good',
     pick: (s) => s.kpi_summary.total_premium,
     fmt: (v) => formatCurrency(v) },
   { key: 'avg_premium',         titleKey: 'evolution.avg_premium',   tint: '--teal',
     iconName: 'tag',                 insightKey: 'evolution.insight.avg_premium',
+    direction: 'up_good',
     pick: (s) => s.kpi_summary.avg_premium_per_client,
     fmt: (v) => formatCurrency(v) },
   { key: 'total_sinistres',     titleKey: 'kpi.sinistres',           tint: '--warning',
     iconName: 'shield.checkmark',    insightKey: 'evolution.insight.total_sinistres',
+    direction: 'up_bad',
     pick: (s) => s.kpi_summary.total_sinistres, fmt: formatInt },
   { key: 'mono_policy_clients', titleKey: 'evolution.mono_policy',   tint: '--pink',
     iconName: 'arrow.up.arrow.down', insightKey: 'evolution.insight.mono_policy_clients',
+    direction: 'up_bad',
     pick: (s) => s.kpi_summary.mono_policy_clients, fmt: formatInt },
 ];
 
@@ -180,7 +195,7 @@ export function renderEvolution(root, ctx) {
       class: 'ratio-action-cta',
       type: 'button',
       'aria-label': ctaLabel,
-      title: stripInsightMarkers(insight),
+      title: stripInfoMarkers(insight),
       onclick: (e) => {
         e.stopPropagation();
         togglePopover(e.currentTarget);
@@ -188,7 +203,7 @@ export function renderEvolution(root, ctx) {
     }, ctaLabel);
     const infoPop = h('div',
       { class: 'card-info-popover card-info-popover-rich', role: 'tooltip' },
-      renderRichInsight(insight));
+      renderInfoText(insight, { actionLabel: t('evolution.ratio_insight.action_label') }));
     return h('div', { class: 'dash-card evo-card' }, [
       h('div', { class: 'evo-card-head' }, [
         iconTile(metric.iconName, metric.tint, { size: 32, iconSize: 16 }),
@@ -200,6 +215,7 @@ export function renderEvolution(root, ctx) {
           width: 720, height: 260,
           color: metric.tint,
           valueFmt: metric.fmt,
+          direction: metric.direction || 'up_good',
           vsPrevLabel: t('evolution.vs_previous'),
           vsFirstLabel: t('evolution.since_start'),
           noDataLabel: t('evolution.no_data'),
@@ -276,7 +292,7 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
       class: 'ratio-action-cta',
       type: 'button',
       'aria-label': ctaLabel,
-      title: stripInsightMarkers(text),
+      title: stripInfoMarkers(text),
       onclick: (e) => {
         e.stopPropagation();
         togglePopover(e.currentTarget);
@@ -284,7 +300,7 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
     }, ctaLabel);
     const pop = h('div',
       { class: 'card-info-popover card-info-popover-rich', role: 'tooltip' },
-      renderRichInsight(text));
+      renderInfoText(text, { actionLabel: t('evolution.ratio_insight.action_label') }));
     return h('span', { class: 'card-head-info ratio-row-info' }, [btn, pop]);
   };
 
@@ -365,26 +381,29 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
       class: 'card-info-btn',
       type: 'button',
       'aria-label': t('common.show_info') || 'Info',
-      title: desc,
+      title: stripInfoMarkers(desc),
       onclick: (e) => {
         e.stopPropagation();
         togglePopover(e.currentTarget);
       },
     }, icon('info.circle', { size: 16 }));
-    const pop = h('div', { class: 'card-info-popover', role: 'tooltip' }, desc);
+    const pop = h('div',
+      { class: 'card-info-popover card-info-popover-rich', role: 'tooltip' },
+      renderInfoText(desc, { actionLabel: t('evolution.ratio_insight.action_label') }));
     return h('div', { class: 'card-head' }, [
       h('h3', { class: 'card-h3' }, title),
       h('div', { class: 'card-head-info' }, [btn, pop]),
     ]);
   })();
 
-  return h('div', { class: 'dash-card', style: 'margin-top:24px;' }, [
+  // Object-form `style` (CSP `style-src 'self'` blocks the string form).
+  return h('div', { class: 'dash-card', style: { marginTop: '24px' } }, [
     head,
     h('div', { class: 'table-wrap' }, h('table', { class: 'dash-table evo-ratios-table' }, [
       h('thead', {}, headerRow),
       h('tbody', {}, bodyRows),
     ])),
-    h('p', { class: 'form-hint', style: 'margin-top:10px;' },
+    h('p', { class: 'form-hint', style: { marginTop: '10px' } },
       t('evolution.ratios_legend')),
   ]);
 }
@@ -436,76 +455,6 @@ function formatSignedInt(n, locale) {
   const sign = n > 0 ? '+' : '';
   const formatted = Math.round(n).toLocaleString(locale || undefined);
   return sign + formatted;
-}
-
-// Parse a multi-line insight string into structured nodes for the popover.
-// Convention:
-//   - First non-marker line  → summary paragraph
-//   - "↑ ..." line           → "what going up means" bullet
-//   - "↓ ..." line           → "what going down means" bullet
-//   - "🛠 ..." line          → corrective-action callout
-// Falls back to plain text if no markers are present (back-compat for older
-// translations that haven't been restructured yet).
-function renderRichInsight(text) {
-  if (!text) return [];
-  const lines = String(text).split('\n').map((s) => s.trim()).filter(Boolean);
-  const summaryLines = [];
-  const ups = [];
-  const downs = [];
-  const actions = [];
-  for (const ln of lines) {
-    if (ln.startsWith('↑ ')) ups.push(ln.slice(2).trim());
-    else if (ln.startsWith('↓ ')) downs.push(ln.slice(2).trim());
-    else if (ln.startsWith('🛠 ')) actions.push(ln.slice(2).trim());
-    else if (ups.length === 0 && downs.length === 0 && actions.length === 0) {
-      summaryLines.push(ln);
-    } else {
-      // Trailing unmarked line: treat as additional summary at the end.
-      summaryLines.push(ln);
-    }
-  }
-
-  const out = [];
-  if (summaryLines.length) {
-    out.push(h('p', { class: 'rich-summary' }, summaryLines.join(' ')));
-  }
-  if (ups.length || downs.length) {
-    const items = [];
-    for (const u of ups) {
-      items.push(h('li', { class: 'rich-up' }, [
-        h('span', { class: 'rich-arrow' }, '▲'),
-        h('span', {}, u),
-      ]));
-    }
-    for (const d of downs) {
-      items.push(h('li', { class: 'rich-down' }, [
-        h('span', { class: 'rich-arrow' }, '▼'),
-        h('span', {}, d),
-      ]));
-    }
-    out.push(h('ul', { class: 'rich-moves' }, items));
-  }
-  if (actions.length) {
-    out.push(h('div', { class: 'rich-action' }, [
-      h('div', { class: 'rich-action-label' }, [
-        h('span', { class: 'rich-action-icon' }, '🛠'),
-        h('span', {}, t('evolution.ratio_insight.action_label')),
-      ]),
-      ...actions.map((a) => h('p', { class: 'rich-action-body' }, a)),
-    ]));
-  }
-  return out;
-}
-
-// Strip inline markers when rendering as a flat tooltip (browser native).
-function stripInsightMarkers(text) {
-  if (!text) return '';
-  return String(text)
-    .split('\n')
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => s.replace(/^↑\s+/, '').replace(/^↓\s+/, '').replace(/^🛠\s+/, ''))
-    .join(' · ');
 }
 
 function deltaBadge(delta) {

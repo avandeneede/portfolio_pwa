@@ -1371,7 +1371,13 @@ button { font-family: inherit; }
 }
 .chart-tip-delta-label { color: var(--text-2); }
 .chart-tip-delta-value { font-variant-numeric: tabular-nums; font-weight: 600; }
-.chart-tip-delta.up .chart-tip-delta-value { color: var(--success, #34c759); }
+/* Tone is semantic: .good = aligned with broker's objective (e.g. premium
+ * rising), .bad = working against it (sinistres rising). .up/.down are kept
+ * as legacy aliases for callers that haven't been ported to direction-aware
+ * tooltips yet — they still render green-up / red-down. */
+.chart-tip-delta.good .chart-tip-delta-value,
+.chart-tip-delta.up   .chart-tip-delta-value { color: var(--success, #34c759); }
+.chart-tip-delta.bad  .chart-tip-delta-value,
 .chart-tip-delta.down .chart-tip-delta-value { color: var(--danger, #ff3b30); }
 .chart-tip-delta.neutral .chart-tip-delta-value { color: var(--text-2); }
 .chart-legend {
@@ -2375,6 +2381,34 @@ button { font-family: inherit; }
   margin: 0 0 8px;
   color: var(--text);
   font-weight: 500;
+}
+.card-info-popover-rich .rich-summary + .rich-summary {
+  margin-top: -4px;
+  font-weight: 400;
+  color: var(--text-2);
+}
+/* Neutral bullet list: facts/definitions, no semantic colour. */
+.card-info-popover-rich .rich-bullets {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.card-info-popover-rich .rich-bullets li {
+  position: relative;
+  padding-left: 14px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+.card-info-popover-rich .rich-bullets li::before {
+  content: '•';
+  position: absolute;
+  left: 2px;
+  top: 0;
+  color: var(--accent, #0a84ff);
+  font-weight: 700;
 }
 .card-info-popover-rich .rich-moves {
   list-style: none;
