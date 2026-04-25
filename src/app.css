@@ -592,10 +592,53 @@ button { font-family: inherit; }
 }
 
 .boot-splash {
-  padding: 64px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 80px 24px;
   text-align: center;
   color: var(--muted);
   font-size: 14px;
+  min-height: 60vh;
+}
+.boot-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2.5px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  animation: boot-spin 0.85s linear infinite;
+}
+.boot-stage {
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+@keyframes boot-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Visible-on-focus skip link. Hidden offscreen by default; jumps to the
+ * top-left when focused via keyboard. Required for keyboard-only users to
+ * bypass the sidebar nav and reach the content area directly. */
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 12px;
+  z-index: 9999;
+  padding: 10px 14px;
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: top 0.16s ease;
+}
+.skip-link:focus {
+  top: 12px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ------------------------------------------------------------------ *
@@ -620,6 +663,18 @@ button { font-family: inherit; }
 .empty-desc { font-size: 14px; color: var(--muted); max-width: 360px; }
 .empty .btn { margin-top: 8px; }
 
+/* "Need more snapshots" inline hint on the evolution screen — softer than
+ * the full empty-state card because charts are still rendered below. */
+.evo-need-more {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  background: var(--card);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+.evo-need-more .form-hint { margin: 0; flex: 1 1 240px; }
+.evo-need-more .btn { flex: 0 0 auto; }
+
 /* ------------------------------------------------------------------ *
  * Toast
  * ------------------------------------------------------------------ */
@@ -643,6 +698,29 @@ button { font-family: inherit; }
 .toast.success { color: var(--success); }
 .toast.warning { color: var(--warning); }
 .toast.danger  { color: var(--danger); }
+.toast.fading {
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+/* Inline action button for toasts (e.g. "Retry"). Sits next to the message
+ * and inherits the kind color so a danger toast's button reads as danger. */
+.toast {
+  display: inline-flex; align-items: center; gap: 12px;
+}
+.toast-msg { flex: 1 1 auto; }
+.toast-action {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  border-radius: 8px;
+  padding: 4px 12px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.toast-action:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+.toast-action:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 @keyframes toast-in {
   from { transform: translateY(8px); opacity: 0; }
   to   { transform: translateY(0);   opacity: 1; }
@@ -1707,6 +1785,39 @@ button { font-family: inherit; }
   border: 1px solid rgba(255, 149, 0, 0.3);
 }
 
+/* Parse error panel: one inline card listing failed files. Replaces a stack
+ * of danger toasts when picking a batch of XLSX files. Dismissable. */
+.upload-errors {
+  margin: 12px 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  padding: 12px 14px;
+}
+.upload-errors-head {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 600;
+  color: var(--danger);
+}
+.upload-errors-title { flex: 1 1 auto; }
+.upload-errors-dismiss {
+  background: transparent; border: none; cursor: pointer;
+  font-size: 22px; line-height: 1; color: inherit;
+  padding: 0 6px;
+}
+.upload-errors-list {
+  list-style: none;
+  padding: 8px 0 0;
+  margin: 0;
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 13px;
+}
+.upload-errors-list li {
+  display: flex; gap: 10px; align-items: baseline;
+}
+.upload-errors-name { font-weight: 600; flex: 0 0 auto; }
+.upload-errors-msg { color: var(--text-secondary); flex: 1 1 auto; }
+
 /* ============================================================ */
 /* Row icons for category tables (sex, civil, social, DQ)       */
 /* ============================================================ */
@@ -2256,4 +2367,38 @@ button { font-family: inherit; }
 .ratio-delta-neutral {
   color: var(--text-2);
   background: color-mix(in srgb, var(--text-2) 12%, transparent);
+}
+
+/* Status pill used in settings rows (e.g. cloud-sync unlocked/locked). */
+.row-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  margin-left: auto;
+  margin-right: 8px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.row-pill.is-ok {
+  color: var(--success, #34c759);
+  background: color-mix(in srgb, var(--success, #34c759) 14%, transparent);
+}
+.row-pill.is-warn {
+  color: var(--warning, #ff9500);
+  background: color-mix(in srgb, var(--warning, #ff9500) 14%, transparent);
+}
+
+/* Utility classes used to hold the CSP-tightening migration. Each replaces a
+ * one-off inline style attribute. Listed here rather than co-located with the
+ * components so the security-relevant set is easy to audit. */
+.row-title-danger { color: var(--danger); }
+.row-title-warning-text { white-space: normal; font-size: 14px; }
+.visually-hidden-input { display: none; }
+.pp-hidden-username {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
 }

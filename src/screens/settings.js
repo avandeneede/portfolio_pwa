@@ -9,7 +9,7 @@ import { exportEncrypted, importEncrypted, buildFilename, downloadBlob } from '.
 import { loadProfile, saveProfile } from '../store/profile.js';
 import {
   getSyncHandle, setSyncHandle, clearSyncHandle, writeToSync, isSyncSupported,
-  isShareSyncSupported, shareEncryptedBackup,
+  isShareSyncSupported, shareEncryptedBackup, hasCachedPassphrase, lockSync,
 } from '../store/cloud_sync.js';
 import { icon, iconTile } from '../ui/icon.js';
 import { askPassphraseModal } from '../ui/passphrase_modal.js';
@@ -192,6 +192,12 @@ export function renderSettings(root, ctx) {
     if (!window.confirm(t('settings.sync.unlink_confirm'))) return;
     await clearSyncHandle();
     toast(t('settings.sync.unlinked'), 'success');
+    ctx.render(renderSettings);
+  }
+
+  function handleSyncLock() {
+    lockSync();
+    toast(t('settings.sync.locked'), 'success');
     ctx.render(renderSettings);
   }
 
@@ -516,6 +522,9 @@ export function renderSettings(root, ctx) {
           h('div', { class: 'row-sub', 'data-sync-status': '' },
             state.syncName || t('settings.sync.not_linked')),
         ]),
+        // Unlocked / locked indicator. Only shown when a sync file is linked.
+        state.syncName ? h('div', { class: 'row-pill ' + (hasCachedPassphrase() ? 'is-ok' : 'is-warn') },
+          hasCachedPassphrase() ? t('settings.sync.unlocked_pill') : t('settings.sync.locked_pill')) : null,
       ]),
       h('div', { class: 'row interactive', onClick: handleSyncPick }, [
         iconTile('tray.and.arrow.up', '--indigo'),
@@ -525,6 +534,16 @@ export function renderSettings(root, ctx) {
         ]),
         h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
       ]),
+      // Lock button: clears the in-memory passphrase. Only shown when the
+      // sync is currently unlocked.
+      (state.syncName && hasCachedPassphrase()) ? h('div', { class: 'row interactive', onClick: handleSyncLock }, [
+        iconTile('lock', '--warning'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.sync.lock')),
+          h('div', { class: 'row-sub' }, t('settings.sync.lock_hint')),
+        ]),
+        h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
+      ]) : null,
       h('div', { class: 'row interactive', onClick: handleSyncClear }, [
         iconTile('trash', '--muted'),
         h('div', { class: 'row-main' }, [
@@ -636,7 +655,7 @@ export function renderSettings(root, ctx) {
       h('div', { class: 'row interactive', onClick: handleResetApp }, [
         iconTile('trash', '--danger'),
         h('div', { class: 'row-main' }, [
-          h('div', { class: 'row-title', style: { color: 'var(--danger)' } },
+          h('div', { class: 'row-title row-title-danger' },
             t('settings.danger.reset')),
           h('div', { class: 'row-sub' }, t('settings.danger.reset_hint')),
         ]),

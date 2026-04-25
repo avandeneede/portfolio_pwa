@@ -23,10 +23,14 @@ export function renderUpload(root, ctx) {
 
   // state.slots: map type -> { parsed, file } once a file has been assigned.
   // state.unrecognized: list of parsed results whose type couldn't be detected.
+  // state.parseErrors: per-file parse failures, surfaced inline on the page
+  // instead of as a stack of toasts. The user can dismiss the whole list with
+  // a single click and re-pick the offending files.
   const state = {
     date: today,
     slots: Object.fromEntries(SLOTS.map((s) => [s.type, null])),
     unrecognized: [],
+    parseErrors: [],
     busy: false,
   };
 
@@ -92,10 +96,10 @@ export function renderUpload(root, ctx) {
   // Hidden native picker; triggered from the "Choose files" button and from
   // individual "Replace" buttons on each slot.
   const fileInput = h('input', {
+    class: 'visually-hidden-input',
     type: 'file',
     multiple: true,
     accept: '.xlsx,.xls',
-    style: { display: 'none' },
     onChange: async (e) => {
       const files = [...e.target.files];
       e.target.value = '';  // allow picking the same file twice
@@ -123,10 +127,14 @@ export function renderUpload(root, ctx) {
           return { ok: false, f, err };
         }
       }));
+      // Collect failures and surface them as a single inline panel rather
+      // than a stack of toasts. One toast still fires as a global signal so
+      // the user notices something went wrong even if scrolled away.
+      const newErrors = [];
       for (const r of results) {
         if (!r.ok) {
           console.error(r.err);
-          toast(`${r.f.name}: ${r.err.message}`, 'danger');
+          newErrors.push({ filename: r.f.name, message: r.err.message || String(r.err) });
           continue;
         }
         if (r.parsed.type && state.slots[r.parsed.type] !== undefined) {
@@ -134,6 +142,10 @@ export function renderUpload(root, ctx) {
         } else {
           state.unrecognized.push({ parsed: r.parsed, filename: r.f.name });
         }
+      }
+      if (newErrors.length > 0) {
+        state.parseErrors = state.parseErrors.concat(newErrors);
+        toast(t('upload.parse_errors_summary').replace('{count}', String(newErrors.length)), 'danger');
       }
     } finally {
       state.busy = false; render();
@@ -174,7 +186,11 @@ export function renderUpload(root, ctx) {
       ctx.navigate(`/snapshot/${snapshotId}`);
     } catch (e) {
       console.error(e);
-      toast(t('error.generic') + ' ' + e.message, 'danger');
+      toast(t('error.generic') + ' ' + e.message, {
+        kind: 'danger',
+        duration: 8000,
+        action: { label: t('common.retry') || 'Retry', onClick: handleCommit },
+      });
       state.busy = false; render();
     }
   }
@@ -261,6 +277,29 @@ export function renderUpload(root, ctx) {
       ]),
 
       h('div', { class: 'upload-slots' }, SLOTS.map(slotCard)),
+
+      // Inline parse-error panel: one card with a list of failed files instead
+      // of a stack of toasts. User can dismiss the whole panel and re-pick.
+      state.parseErrors.length > 0
+        ? h('div', { class: 'upload-errors', role: 'alert' }, [
+            h('div', { class: 'upload-errors-head' }, [
+              icon('exclamationmark.triangle', { size: 16, color: '--danger' }),
+              h('span', { class: 'upload-errors-title' },
+                t('upload.parse_errors_title').replace('{count}', String(state.parseErrors.length))),
+              h('button', {
+                class: 'upload-errors-dismiss',
+                type: 'button',
+                'aria-label': t('nav.close') || 'Close',
+                onClick: () => { state.parseErrors = []; render(); },
+              }, '×'),
+            ]),
+            h('ul', { class: 'upload-errors-list' },
+              state.parseErrors.map((e) => h('li', {}, [
+                h('span', { class: 'upload-errors-name' }, e.filename),
+                h('span', { class: 'upload-errors-msg' }, e.message),
+              ]))),
+          ])
+        : null,
 
       state.unrecognized.length > 0
         ? h('div', { class: 'upload-unrec-list' }, state.unrecognized.map(unrecognizedRow))

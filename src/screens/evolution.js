@@ -119,12 +119,23 @@ export function renderEvolution(root, ctx) {
   const snapshots = ctx.db.listSnapshots();
 
   if (snapshots.length === 0) {
+    // Zero snapshots: send the user to the upload screen with a clear CTA
+     // instead of dead-ending them on a "no data" message.
     mount(root, h('div', { class: 'page' }, [
       h('h1', { class: 'page-title' }, t('evolution.title')),
       h('div', { class: 'empty' }, [
         h('div', { class: 'empty-icon' },
           iconTile('chart.bar', '--muted', { size: 56, iconSize: 28 })),
         h('div', { class: 'empty-title' }, t('evolution.empty')),
+        h('div', { class: 'empty-desc' }, t('evolution.empty_desc')),
+        h('button', {
+          class: 'btn primary',
+          type: 'button',
+          onClick: () => ctx.navigate('/upload'),
+        }, [
+          icon('plus', { size: 16, color: '#fff' }),
+          h('span', {}, t('home.empty.cta')),
+        ]),
       ]),
     ]));
     return;
@@ -219,7 +230,17 @@ export function renderEvolution(root, ctx) {
       ]),
     ]),
     chronological.length < 2
-      ? h('p', { class: 'form-hint' }, t('evolution.need_more'))
+      ? h('div', { class: 'evo-need-more' }, [
+          h('p', { class: 'form-hint' }, t('evolution.need_more')),
+          h('button', {
+            class: 'btn primary',
+            type: 'button',
+            onClick: () => ctx.navigate('/upload'),
+          }, [
+            icon('plus', { size: 16, color: '#fff' }),
+            h('span', {}, t('nav.new_snapshot')),
+          ]),
+        ])
       : null,
     h('div', { class: 'dash-grid dash-grid-evolution' }, METRICS.map(chartCard)),
     ratiosCard,
@@ -342,7 +363,7 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
     const btn = h('button', {
       class: 'card-info-btn',
       type: 'button',
-      'aria-label': 'Info',
+      'aria-label': t('common.show_info') || 'Info',
       title: desc,
       onclick: (e) => {
         e.stopPropagation();

@@ -45,6 +45,11 @@ export function ensureIconSprite() {
       throw new Error('Icon sprite parse failed: no <svg> root');
     }
     root.id = SPRITE_DOM_ID;
+    // The source sprite carries a literal `style="display:none"` attribute.
+    // Strip it before grafting in, then re-apply via the CSSOM setter — that
+    // path is allowed under a strict `style-src 'self'` (no 'unsafe-inline'),
+    // whereas a parsed style attribute on the live DOM is not.
+    root.removeAttribute('style');
     root.style.display = 'none';
     root.setAttribute('aria-hidden', 'true');
     document.body.appendChild(document.importNode(root, true));

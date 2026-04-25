@@ -3,10 +3,9 @@
 // Idea: the user picks a file on their file system that happens to live inside
 // a cloud-synced folder — iCloud Drive, OneDrive, Dropbox, Google Drive.
 // We persist the FileSystemFileHandle in IndexedDB (handles *are* serializable
-// into IDB, unlike most objects), along with the passphrase the user chose for
-// this sync file, and after every local DB save we also write the same
-// encrypted payload to the picked file. The cloud provider then propagates it
-// to other devices.
+// into IDB, unlike most objects) and after every local DB save we also write
+// the same encrypted payload to the picked file. The cloud provider then
+// propagates it to other devices.
 //
 // Read-back on boot: if a handle exists and the remote file is newer than the
 // local OPFS copy, we offer to pull it in. (Pull is wired separately in main.)
@@ -15,15 +14,32 @@
 // desktop, plus Android Chrome). Safari and Firefox don't implement it as of
 // 2026. The `isSyncSupported` check lets the UI hide the feature elsewhere.
 //
-// Security note: the passphrase is stored in IndexedDB in plaintext. This is
-// the same trust model as localStorage — anything with access to the origin
-// can read it. We call this out in the GDPR disclaimer.
+// SECURITY: the passphrase is never persisted. It lives only in module-scope
+// memory for the lifetime of the tab. On boot, the app calls
+// `requestPassphrase()` once if a sync handle is linked — the user enters it,
+// it's held in RAM, and lost when the tab closes. Auto-saves between then and
+// tab close use the cached passphrase. If the user cancels the boot prompt or
+// reaches a sync write before unlocking, the write is skipped silently
+// (`reason: 'locked'`) and surfaced via the settings UI.
+//
+// Threat model improvement vs. v50: anything with origin access could read
+// IDB plaintext. Now an attacker needs to either be present during an active
+// session or trigger a fresh prompt — significantly higher bar.
 
 import { exportEncrypted } from './backup.js';
 
 const IDB_NAME = 'portefeuille-sync';
 const IDB_STORE = 'sync';
 const IDB_KEY = 'active';
+// One-shot migration: if a legacy record carries a `passphrase` field we
+// strip it on first read. Tracked so we don't re-write on every boot.
+const LEGACY_FIELD = 'passphrase';
+
+// Module-scope passphrase cache. Cleared on tab close (no persistence).
+let cachedPassphrase = null;
+// Caller-supplied prompt. Installed at boot by main.js so this module
+// stays UI-agnostic and tree-shakeable in tests.
+let passphrasePrompt = null;
 
 // Full File System Access API: Chromium only. Unlocks live auto-sync:
 // after every local DB save we also write the same encrypted blob to the
@@ -130,6 +146,16 @@ async function idbDelete() {
   });
 }
 
+// One-shot migration: any record from v50 or earlier carries a plaintext
+// `passphrase` field. Strip it and rewrite the record without it. The user
+// will be prompted next time they save, exactly like a fresh link.
+async function stripLegacyPassphraseField(rec) {
+  if (!rec || !(LEGACY_FIELD in rec)) return rec;
+  const { [LEGACY_FIELD]: _stripped, ...clean } = rec;
+  await idbPut(clean);
+  return clean;
+}
+
 // Verify we still have write permission on the handle. Browsers require a
 // user gesture the first time; afterwards queryPermission may return 'granted'
 // without a prompt. If it's 'prompt', we request again (which will fail if not
@@ -143,29 +169,76 @@ async function ensureWritable(handle) {
 }
 
 export async function getSyncHandle() {
-  const rec = await idbGet();
+  let rec = await idbGet();
+  rec = await stripLegacyPassphraseField(rec);
   return rec || null;
 }
 
+// Link a sync file. The passphrase is cached in memory for this session
+// (so the next auto-write doesn't need to re-prompt), but never persisted.
 export async function setSyncHandle(handle, { passphrase }) {
   if (!handle) throw new Error('handle required');
   if (!passphrase) throw new Error('passphrase required');
-  await idbPut({ handle, passphrase, name: handle.name || '', savedAt: Date.now() });
+  await idbPut({ handle, name: handle.name || '', savedAt: Date.now() });
+  cachedPassphrase = passphrase;
 }
 
 export async function clearSyncHandle() {
   await idbDelete();
+  cachedPassphrase = null;
+}
+
+// --- Passphrase lifecycle (memory only) -------------------------------------
+
+// Install the prompt callback at app boot. Decoupled from the modal module so
+// this file stays import-light for smoke tests.
+export function setPassphrasePrompt(fn) {
+  passphrasePrompt = typeof fn === 'function' ? fn : null;
+}
+
+export function hasCachedPassphrase() {
+  return cachedPassphrase != null;
+}
+
+// Forget the in-memory passphrase. Wired to a "Lock sync" button in settings.
+export function lockSync() {
+  cachedPassphrase = null;
+}
+
+// Try to obtain a passphrase, in order:
+//   1. cached in memory (fast path)
+//   2. caller-supplied (e.g. unlock-on-boot path)
+//   3. prompt the user via the installed callback
+// Returns null if no callback is installed or the user cancelled.
+export async function ensurePassphrase({ explicit, prompt = true } = {}) {
+  if (explicit) {
+    cachedPassphrase = explicit;
+    return cachedPassphrase;
+  }
+  if (cachedPassphrase) return cachedPassphrase;
+  if (!prompt || !passphrasePrompt) return null;
+  const value = await passphrasePrompt();
+  if (value) cachedPassphrase = value;
+  return cachedPassphrase;
 }
 
 // Write the current DB (+ optional profile) to the linked sync file.
-// Silently no-ops if no handle is linked. Throws on actual write failures so
-// the caller can surface them.
-export async function writeToSync(dbBytes, profile) {
-  const rec = await idbGet();
-  if (!rec) return { written: false };
+// Silently no-ops if no handle is linked or no passphrase is cached and we
+// can't prompt (background save). Throws on actual write failures so the
+// caller can surface them.
+//
+// Options:
+//   prompt: when false (default for fire-and-forget background saves), skip
+//           prompting if the passphrase isn't cached. UI-initiated calls pass
+//           `prompt: true` so the user sees the unlock modal.
+export async function writeToSync(dbBytes, profile, { prompt = false } = {}) {
+  const rec = await getSyncHandle();
+  if (!rec) return { written: false, reason: 'no-handle' };
+  const passphrase = await ensurePassphrase({ prompt });
+  if (!passphrase) return { written: false, reason: 'locked' };
   const ok = await ensureWritable(rec.handle);
   if (!ok) return { written: false, reason: 'permission-denied' };
-  const payload = await exportEncrypted(dbBytes, rec.passphrase, { profile });
+  const payload = await exportEncrypted(dbBytes, passphrase, { profile });
   const writable = await rec.handle.createWritable();
   try {
     await writable.write(payload);
@@ -177,17 +250,22 @@ export async function writeToSync(dbBytes, profile) {
 
 // Read the sync file's current contents and its mtime. Returns null if no
 // handle, or if permission is not granted.
-export async function readFromSync() {
-  const rec = await idbGet();
+//
+// If the passphrase isn't cached we prompt for it here (this is always a
+// user-initiated path — boot pull-in or "sync now" — so prompting is fine).
+export async function readFromSync({ prompt = true } = {}) {
+  const rec = await getSyncHandle();
   if (!rec) return null;
   const ok = await ensureWritable(rec.handle);
   if (!ok) return null;
+  const passphrase = await ensurePassphrase({ prompt });
+  if (!passphrase) return { locked: true };
   const file = await rec.handle.getFile();
   const buf = await file.arrayBuffer();
   return {
     bytes: new Uint8Array(buf),
     lastModified: file.lastModified,
     name: file.name,
-    passphrase: rec.passphrase,
+    passphrase,
   };
 }

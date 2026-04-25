@@ -11,8 +11,9 @@ import { buildRatiosSummary, ratioSectionTitle } from '../core/ratios_summary.js
 import { icon, iconTile } from '../ui/icon.js';
 import { pieChart, hBarChart, vBarChart } from '../ui/charts.js';
 import { renderReport, printReport } from './report.js';
-import { exportClientTotalXlsx, exportOppXlsx, downloadBlob, buildClientTotalFilename, buildOppFilename } from '../store/xlsx_export.js';
+import { exportClientTotalXlsx, downloadBlob, buildClientTotalFilename } from '../store/xlsx_export.js';
 import { reparseSnapshot } from '../core/reparse.js';
+import { oppTile, OPP_RENDERERS, showOppDetail } from './dashboard_opp.js';
 
 // -----------------------------------------------------------------------------
 // UI primitives
@@ -39,7 +40,7 @@ function infoPopover(text) {
   const btn = h('button', {
     class: 'card-info-btn',
     type: 'button',
-    'aria-label': 'Info',
+    'aria-label': t('common.show_info') || 'Info',
     title: text,
     onclick: (e) => {
       e.stopPropagation();
@@ -180,7 +181,7 @@ function cardHead(title, infoText) {
   const btn = h('button', {
     class: 'card-info-btn',
     type: 'button',
-    'aria-label': 'Info',
+    'aria-label': t('common.show_info') || 'Info',
     title: infoText || '',
     onclick: (e) => {
       e.stopPropagation();
@@ -192,24 +193,6 @@ function cardHead(title, infoText) {
     h('h3', { class: 'card-h3' }, title),
     infoText ? h('div', { class: 'card-head-info' }, [btn, pop]) : null,
   ]);
-}
-
-// Clickable contact cell. Returns a tel:/mailto: anchor when value is non-empty
-// and shaped like a phone/email. Falls back to a plain em-dash for empties.
-function contactLink(value, kind) {
-  const s = String(value ?? '').trim();
-  if (!s || s === '—') return '—';
-  if (kind === 'tel') {
-    // Strip spaces/parens/dashes for tel: URL; keep leading + if present.
-    const href = 'tel:' + s.replace(/[^\d+]/g, '');
-    return h('a', { href, class: 'contact-link' }, s);
-  }
-  if (kind === 'email') {
-    // Rudimentary check — if it looks like an email, link it; otherwise text.
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return s;
-    return h('a', { href: 'mailto:' + s, class: 'contact-link' }, s);
-  }
-  return s;
 }
 
 // After a card is mounted, wire hover sync between chart elements and table
@@ -396,7 +379,11 @@ export function renderDashboard(root, ctx, args) {
       toast(t('dashboard.export_xlsx_done'), 'success');
     } catch (e) {
       console.error(e);
-      toast(t('error.generic') + ' ' + e.message, 'danger');
+      toast(t('error.generic') + ' ' + e.message, {
+        kind: 'danger',
+        duration: 8000,
+        action: { label: t('common.retry') || 'Retry', onClick: handleExportXlsx },
+      });
     }
   }
 
@@ -1294,156 +1281,5 @@ export function renderDashboard(root, ctx, args) {
   root.querySelectorAll('.dash-section').forEach((secEl) => wireCardSync(secEl));
 }
 
-function oppTile(iconName, tint, label, count, desc, onClick) {
-  const props = { class: 'opp-tile' + (onClick && count > 0 ? ' opp-tile-clickable' : '') };
-  if (onClick && count > 0) {
-    props.onclick = onClick;
-    props.role = 'button';
-    props.tabindex = '0';
-    props.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } };
-  }
-  return h('div', props, [
-    iconTile(iconName, tint, { size: 40, iconSize: 22 }),
-    h('div', { class: 'opp-tile-main' }, [
-      h('div', { class: 'opp-tile-count' }, String(count)),
-      h('div', { class: 'opp-tile-label' }, label),
-      desc ? h('div', { class: 'opp-tile-desc' }, desc) : null,
-      onClick && count > 0 ? h('div', { class: 'opp-tile-chevron', 'aria-hidden': 'true' }, '›') : null,
-    ]),
-  ]);
-}
-
-// ---- Opportunity detail modal ----------------------------------------------
-//
-// Each opportunity row list has a renderer that turns a raw item into a table
-// row (array of cells). We open a lightweight overlay (no routing) so the user
-// can scan the list and then close it without leaving the dashboard.
-
-// Each renderer provides two row extractors:
-//   - `row(it)`  → DOM nodes for the on-screen table (clickable tel/mail links,
-//                   pill lists, etc.)
-//   - `xlsxRow(it)` → plain strings for the xlsx export (no DOM, phones/emails
-//                   as raw values, pill lists joined with commas)
-// First column is the client name for every renderer — the modal title
-// already tells the user which opportunity list they're looking at, so
-// we label column 1 "Client" rather than repeating the section name.
-const OPP_RENDERERS = {
-  cross_sell: {
-    head: ['Client', t('report.branch'), t('report.postal'), 'Téléphone', 'E-mail'],
-    row: (it) => [it.nom || '—', it.current_branch ? branchLabel(it.current_branch) : '—', it.code_postal || '—', contactLink(it.telephone, 'tel'), contactLink(it.email, 'email')],
-    xlsxRow: (it) => [it.nom || '', it.current_branch ? branchLabel(it.current_branch) : '', it.code_postal || '', it.telephone || '', it.email || ''],
-  },
-  succession: {
-    head: ['Client', 'Âge', t('report.branch'), 'Téléphone', 'E-mail'],
-    row: (it) => [it.nom || '—', String(it.age ?? '—'), (it.current_branches || []).map(branchLabel).join(', ') || '—', contactLink(it.telephone, 'tel'), contactLink(it.email, 'email')],
-    xlsxRow: (it) => [it.nom || '', it.age ?? '', (it.current_branches || []).map(branchLabel).join(', '), it.telephone || '', it.email || ''],
-  },
-  young_families: {
-    head: ['Client', 'Âge', t('report.branch'), 'Téléphone', 'E-mail'],
-    row: (it) => [it.nom || '—', String(it.age ?? '—'), (it.current_branches || []).map(branchLabel).join(', ') || '—', contactLink(it.telephone, 'tel'), contactLink(it.email, 'email')],
-    xlsxRow: (it) => [it.nom || '', it.age ?? '', (it.current_branches || []).map(branchLabel).join(', '), it.telephone || '', it.email || ''],
-  },
-  high_value: {
-    head: ['Client', 'Prime', 'Polices', t('report.branch'), 'Téléphone'],
-    row: (it) => [it.nom || '—', formatCurrency(it.premium), String(it.n_policies ?? '—'), (it.current_branches || []).map(branchLabel).join(', ') || '—', contactLink(it.telephone, 'tel')],
-    xlsxRow: (it) => [it.nom || '', it.premium ?? '', it.n_policies ?? '', (it.current_branches || []).map(branchLabel).join(', '), it.telephone || ''],
-  },
-  data_quality_cleanup: {
-    head: ['Client', 'Champs manquants', 'Nombre'],
-    row: (it) => [
-      it.nom || '—',
-      h('div', { class: 'dq-pill-list' }, (it.missing_fields || []).map((f) => {
-        const critical = CRITICAL_CONTACT_KEYS.has(f);
-        const tint = critical ? '--danger' : '--warning';
-        return h('span', { class: 'dq-pill' + (critical ? ' dq-pill-critical' : '') }, [
-          icon(dqFieldIcon(f), { size: 12, color: tint }),
-          h('span', {}, f),
-        ]);
-      })),
-      String(it.missing_count ?? 0),
-    ],
-    xlsxRow: (it) => [it.nom || '', (it.missing_fields || []).join(', '), it.missing_count ?? 0],
-  },
-};
-
-function showOppDetail(title, items, renderer, opts = {}) {
-  if (!items || items.length === 0) return;
-  const close = () => {
-    overlay.remove();
-    document.removeEventListener('keydown', onKey);
-  };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
-
-  // The on-screen table is capped at 500 rows (DOM cost) but the export
-  // covers the full list so brokers can prospect every match.
-  const bodyRows = items.slice(0, 500).map((it) => h('tr', {},
-    renderer.row(it).map((cell) => h('td', {}, cell))
-  ));
-  const moreNote = items.length > 500
-    ? h('div', { class: 'opp-modal-note' }, `+ ${items.length - 500} supplémentaires…`)
-    : null;
-
-  const { ctx, snapshot } = opts;
-  let exporting = false;
-  async function exportXlsx(e) {
-    const btn = e.currentTarget;
-    if (exporting || !ctx || !renderer.xlsxRow) return;
-    exporting = true;
-    btn.disabled = true;
-    try {
-      const rows = items.map((it) => renderer.xlsxRow(it));
-      const blob = await exportOppXlsx(ctx, {
-        header: renderer.head,
-        rows,
-        sheetName: title,
-      });
-      // Omit snapshot.label (broker's own portfolio name) from the filename
-      // so shared exports don't carry client-identifying strings like "Dossche".
-      const filename = buildOppFilename(title, snapshot?.snapshot_date);
-      downloadBlob(blob, filename);
-      toast(t('dashboard.export_xlsx_done'), 'success');
-    } catch (err) {
-      console.error(err);
-      toast(t('error.generic') + ' ' + err.message, 'danger');
-    } finally {
-      exporting = false;
-      btn.disabled = false;
-    }
-  }
-
-  const exportBtn = (ctx && renderer.xlsxRow)
-    ? h('button', {
-        class: 'opp-modal-export btn ghost',
-        type: 'button',
-        onclick: exportXlsx,
-      }, [
-        icon('tray.and.arrow.up', { size: 14, color: '--accent' }),
-        h('span', {}, t('dashboard.export_xlsx')),
-      ])
-    : null;
-
-  const overlay = h('div', {
-    class: 'opp-modal-overlay',
-    onclick: (e) => { if (e.target === overlay) close(); },
-  }, [
-    h('div', { class: 'opp-modal', role: 'dialog', 'aria-modal': 'true' }, [
-      h('div', { class: 'opp-modal-head' }, [
-        h('h3', { class: 'opp-modal-title' }, `${title} · ${items.length}`),
-        h('div', { class: 'opp-modal-head-actions' }, [
-          exportBtn,
-          h('button', { class: 'opp-modal-close', onclick: close, 'aria-label': 'Fermer' }, '×'),
-        ]),
-      ]),
-      h('div', { class: 'opp-modal-body' }, [
-        h('table', { class: 'opp-modal-table' }, [
-          h('thead', {}, h('tr', {}, renderer.head.map((c) => h('th', {}, c)))),
-          h('tbody', {}, bodyRows),
-        ]),
-        moreNote,
-      ]),
-    ]),
-  ]);
-
-  document.body.appendChild(overlay);
-  document.addEventListener('keydown', onKey);
-}
+// Opportunity tiles + detail modal live in `./dashboard_opp.js`. We re-import
+// `oppTile`, `OPP_RENDERERS`, and `showOppDetail` at the top of this file.

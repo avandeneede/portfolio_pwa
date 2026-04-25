@@ -19,8 +19,10 @@ export function renderShell(container, ctx) {
     renderTopbar(ctx),
     renderDrawerBackdrop(),
     renderSidebar(ctx),
-    h('main', { class: 'content' }, [
-      h('div', { id: 'content', class: 'content-inner' }),
+    h('main', { class: 'content', role: 'main' }, [
+      // tabindex="-1" makes the skip-link target programmatically focusable
+      // so "Skip to content" actually moves keyboard focus into the page.
+      h('div', { id: 'content', class: 'content-inner', tabindex: '-1' }),
     ]),
   ]);
   mount(container, app);

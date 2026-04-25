@@ -21,7 +21,15 @@ import { icon } from './icon.js';
 
 export function askPassphraseModal({ mode = 'get', title, message } = {}) {
   return new Promise((resolve) => {
-    const overlay = h('div', { class: 'pp-overlay', role: 'dialog', 'aria-modal': 'true' });
+    // Stable id so the dialog labels itself via aria-labelledby. Suffix
+     // avoids collisions if multiple modals could ever be open in succession.
+    const titleId = `pp-title-${Date.now().toString(36)}`;
+    const overlay = h('div', {
+      class: 'pp-overlay',
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-labelledby': titleId,
+    });
 
     // The form wrapper is what actually triggers iOS Passwords. The inputs
     // need a `name` attribute, real autocomplete tokens, and the form must
@@ -37,13 +45,13 @@ export function askPassphraseModal({ mode = 'get', title, message } = {}) {
     // can group passphrases per profile. Using the app origin as the ID keeps
     // it stable across sessions.
     const userInput = h('input', {
+      class: 'pp-hidden-username',
       type: 'text',
       name: 'username',
       value: 'portefeuille-backup',
       autocomplete: 'username',
       'aria-hidden': 'true',
       tabindex: '-1',
-      style: { position: 'absolute', left: '-9999px', width: '1px', height: '1px' },
       readonly: true,
     });
 
@@ -84,7 +92,7 @@ export function askPassphraseModal({ mode = 'get', title, message } = {}) {
     const header = h('div', { class: 'pp-header' }, [
       h('div', { class: 'pp-icon' }, icon('lock', { size: 20, color: '#fff' })),
       h('div', { class: 'pp-titles' }, [
-        h('div', { class: 'pp-title' }, title || t('settings.passphrase.title') || 'Passphrase'),
+        h('div', { class: 'pp-title', id: titleId }, title || t('settings.passphrase.title') || 'Passphrase'),
         message ? h('div', { class: 'pp-message' }, message) : null,
       ]),
     ]);
@@ -104,14 +112,54 @@ export function askPassphraseModal({ mode = 'get', title, message } = {}) {
 
     overlay.appendChild(form);
 
+    // Save the previously focused element so we can restore focus on close —
+    // standard a11y pattern for modal dialogs.
+    const previouslyFocused = document.activeElement;
+
     function close(value) {
       document.removeEventListener('keydown', onKey);
       overlay.remove();
+      // Restore focus to wherever it was before the modal opened. Guard against
+      // the element being removed from the DOM in the meantime.
+      if (previouslyFocused && typeof previouslyFocused.focus === 'function'
+          && document.contains(previouslyFocused)) {
+        try { previouslyFocused.focus(); } catch (_) { /* ignore */ }
+      }
       resolve(value);
     }
 
+    // Returns the focusable elements inside the form, in tab order. Recomputed
+    // on each Tab keypress because confirmInput may not exist (mode === 'get'),
+    // and disabled state can change.
+    function focusables() {
+      return Array.from(form.querySelectorAll(
+        'input:not([type=hidden]):not([disabled]):not([tabindex="-1"]),' +
+        'button:not([disabled]),[href],[tabindex]:not([tabindex="-1"])'
+      ));
+    }
+
     function onKey(e) {
-      if (e.key === 'Escape') { e.preventDefault(); close(null); }
+      if (e.key === 'Escape') { e.preventDefault(); close(null); return; }
+      // Focus trap: keep Tab cycling within the modal so screen-reader and
+      // keyboard users can't tab into the page behind us.
+      if (e.key === 'Tab') {
+        const items = focusables();
+        if (items.length === 0) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        } else if (!form.contains(active)) {
+          // Focus escaped the form somehow — pull it back in.
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
     document.addEventListener('keydown', onKey);
 

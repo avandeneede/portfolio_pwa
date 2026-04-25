@@ -55,7 +55,11 @@ export function renderPreview(root, ctx) {
       ctx.navigate(`/snapshot/${snapshotId}`);
     } catch (e) {
       console.error(e);
-      toast(t('error.generic') + ' ' + e.message, 'danger');
+      toast(t('error.generic') + ' ' + e.message, {
+        kind: 'danger',
+        duration: 8000,
+        action: { label: t('common.retry') || 'Retry', onClick: handleConfirm },
+      });
       state.busy = false; updateCta();
     }
   }
@@ -97,7 +101,7 @@ export function renderPreview(root, ctx) {
       h('div', { class: 'group' },
         warnings.map((w) => h('div', { class: 'row' }, [
           h('div', { class: 'row-main' }, [
-            h('div', { class: 'row-title', style: { whiteSpace: 'normal', fontSize: '14px' } }, w),
+            h('div', { class: 'row-title row-title-warning-text' }, w),
           ]),
         ]))
       ),

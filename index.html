@@ -7,14 +7,22 @@
   headers). Deliberately strict:
     - default-src 'self'             : load everything from our origin
     - script-src 'self' 'wasm-unsafe-eval' : allow vendored sql.js WASM to compile
-    - style-src 'self' 'unsafe-inline' : small inline styles + data URLs for logos
+    - style-src 'self'               : no inline <style> or parsed style="";
+                                       all dynamic styling goes through CSSOM
+                                       setters in src/ui/dom.js applyStyle.
+                                       The FA sprite's literal style="" is
+                                       stripped on parse in src/ui/icon.js.
     - img-src 'self' data: blob:     : logo data URLs, generated chart blobs
     - connect-src 'self'             : no outbound network, privacy by default
     - object-src 'none'              : no plugins
     - base-uri 'self'                : lock down <base> injection
     - form-action 'self'             : no cross-origin form POSTs
+    - frame-ancestors 'none'         : no embedding, no clickjacking
+    - require-trusted-types-for 'script' is intentionally omitted: vendored
+      sql.js + sheetjs would require shims, and dom.js already throws on any
+      `html:` prop so user-supplied innerHTML is impossible by construction.
 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
@@ -27,8 +35,12 @@
 <link rel="stylesheet" href="src/app.css">
 </head>
 <body>
+  <a class="skip-link" href="#content">Skip to content</a>
   <div id="root">
-    <div class="boot-splash">Chargement…</div>
+    <div class="boot-splash" role="status" aria-live="polite">
+      <div class="boot-spinner" aria-hidden="true"></div>
+      <div class="boot-stage" data-boot-stage>Chargement…</div>
+    </div>
   </div>
   <div id="toast-host" aria-live="polite"></div>
   <script type="module" src="src/main.js"></script>
