@@ -476,17 +476,42 @@ export function computeGeographicProfile(clients, cumulThreshold = 70.0) {
     return { rows: [], zone_count: 0, zone_pct: 0, hors_zone_count: 0, hors_zone_pct: 0 };
   }
 
+  // Brokers export inconsistent commune-name variants for the same postcode
+  // — "ENGHIEN", "Enghien", "B - ENGHIEN", "enghien" can all appear in the
+  // same snapshot. We canonicalise per CP by majority vote on the cleaned
+  // variant (titlecased, country-prefix stripped). Ties broken by first-seen
+  // for determinism. No external lookup, no risk of overwriting broker data
+  // with a wrong external mapping — the broker's own data is authoritative
+  // for what they call things.
   const cpCounts = new Map();
-  const cpLocalite = new Map();
+  const cpVariantCounts = new Map(); // cp -> Map(name -> count)
+  const cpVariantOrder = new Map();  // cp -> Map(name -> first-seen index) for tie-break
   for (const c of clients) {
     const cp = String(c.code_postal ?? '').trim();
-    if (cp && cp.toLowerCase() !== 'none') {
-      counterInc(cpCounts, cp);
-      if (!cpLocalite.has(cp)) {
-        const loc = cleanCommune(c.localite);
-        if (loc && loc.toLowerCase() !== 'none') cpLocalite.set(cp, loc);
+    if (!cp || cp.toLowerCase() === 'none') continue;
+    counterInc(cpCounts, cp);
+    const loc = cleanCommune(c.localite);
+    if (!loc || loc.toLowerCase() === 'none') continue;
+    let variants = cpVariantCounts.get(cp);
+    if (!variants) { variants = new Map(); cpVariantCounts.set(cp, variants); }
+    let order = cpVariantOrder.get(cp);
+    if (!order) { order = new Map(); cpVariantOrder.set(cp, order); }
+    variants.set(loc, (variants.get(loc) || 0) + 1);
+    if (!order.has(loc)) order.set(loc, order.size);
+  }
+  const cpLocalite = new Map();
+  for (const [cp, variants] of cpVariantCounts) {
+    let bestName = '';
+    let bestCount = -1;
+    let bestOrder = Infinity;
+    const order = cpVariantOrder.get(cp);
+    for (const [name, count] of variants) {
+      const ord = order.get(name) ?? Infinity;
+      if (count > bestCount || (count === bestCount && ord < bestOrder)) {
+        bestName = name; bestCount = count; bestOrder = ord;
       }
     }
+    cpLocalite.set(cp, bestName);
   }
 
   const ranked = sortByCountDescKeyAsc(cpCounts.entries());

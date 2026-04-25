@@ -10,7 +10,7 @@
 // Keep in sync with APP_VERSION in src/version.js — that's what triggers
 // the client-side auto-reparse of stored snapshots after a parser change.
 
-const CACHE_VERSION = 'v61';
+const CACHE_VERSION = 'v62';
 const CACHE_NAME = `portefeuille-${CACHE_VERSION}`;
 
 const PRECACHE = [
@@ -50,6 +50,8 @@ const PRECACHE = [
   './src/screens/report.js',
   './src/screens/settings.js',
   './src/screens/tutorial.js',
+  './src/ui/choropleth.js',
+  './data/be_municipalities.json',
   './locales/fr.json',
   './locales/nl.json',
   './locales/en.json',

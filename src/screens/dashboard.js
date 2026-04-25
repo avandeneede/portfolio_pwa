@@ -11,6 +11,7 @@ import { computeAllStats, computeClientTotal } from '../core/analyzer.js';
 import { buildRatiosSummary, ratioSectionTitle } from '../core/ratios_summary.js';
 import { icon, iconTile } from '../ui/icon.js';
 import { pieChart, hBarChart, vBarChart } from '../ui/charts.js';
+import { loadMunicipalities, municipalityChoropleth, resolveCountsByNis, choroplethLegend } from '../ui/choropleth.js';
 import { renderReport, printReport } from './report.js';
 import { exportClientTotalXlsx, downloadBlob, buildClientTotalFilename } from '../store/xlsx_export.js';
 import { reparseSnapshot } from '../core/reparse.js';
@@ -829,6 +830,19 @@ export async function renderDashboard(root, ctx, args) {
       ]),
     ]),
 
+    // Choropleth card — rendered async after mount() so the 421KB municipalities
+    // JSON doesn't block first paint of the dashboard. The placeholder shows a
+    // small spinner; `fillChoropleth` below replaces it once data resolves.
+    card([
+      cardHead(t('choropleth.title'), t('choropleth.info')),
+      h('div', { class: 'choropleth-host', 'data-choropleth-host': '1' }, [
+        h('div', { class: 'card-empty' }, [
+          h('div', { class: 'spinner' }),
+          h('div', { class: 'card-empty-label' }, t('common.loading') || '…'),
+        ]),
+      ]),
+    ], { class: 'card-choropleth' }),
+
     h('div', { class: 'dash-grid dash-grid-2' }, [
       // Gender card — symbols, pie, table with known/unknown/total.
       card([
@@ -1317,6 +1331,41 @@ export async function renderDashboard(root, ctx, args) {
   // table-card + pie-card) still sync. Our keys are prefixed ('cp:', 'sex:',
   // 'branch:', etc.) so cards inside the same section don't collide.
   root.querySelectorAll('.dash-section').forEach((secEl) => wireCardSync(secEl));
+
+  // Lazy-fill the choropleth after first paint. Loading the 421KB municipality
+  // JSON synchronously would push the dashboard's TTI well past 1s on cold
+  // cache; this lets sec2's table and the rest of the page render immediately,
+  // with the map filling in 100–300ms later from disk/SW cache.
+  fillChoropleth(root, geo, ctx).catch((err) => {
+    console.warn('[dashboard] choropleth failed', err);
+    const host = root.querySelector('[data-choropleth-host]');
+    if (host) {
+      host.replaceChildren();
+      host.appendChild(h('div', { class: 'card-empty' }, t('choropleth.error') || t('error.generic')));
+    }
+  });
+}
+
+async function fillChoropleth(root, geo, ctx) {
+  const host = root.querySelector('[data-choropleth-host]');
+  if (!host) return;
+  const data = await loadMunicipalities();
+  const { counts, mapped, total, unmapped } = resolveCountsByNis(geo.rows, data.byName);
+  const lang = (ctx.locale === 'nl') ? 'nl' : 'fr';
+  const { svg: svgEl, max, thresholds } = municipalityChoropleth({
+    data, counts, total, t, labelLang: lang,
+  });
+  host.replaceChildren();
+  host.appendChild(svgEl);
+  host.appendChild(choroplethLegend({ thresholds, max, t }));
+  // Surface a small note when broker localités didn't match a NIS so the user
+  // knows the map is approximate. (Most exports name-match cleanly thanks to
+  // the diacritic+space-tolerant index.)
+  if (total > 0 && mapped < total) {
+    const lostPct = ((total - mapped) / total * 100).toFixed(1);
+    host.appendChild(h('div', { class: 'choropleth-note' },
+      `${t('choropleth.unmapped_note').replace('{pct}', lostPct).replace('{n}', String(unmapped.length))}`));
+  }
 }
 
 // Opportunity tiles + detail modal live in `./dashboard_opp.js`. We re-import
