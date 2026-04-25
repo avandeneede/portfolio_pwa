@@ -220,15 +220,9 @@ export function buildRatiosSummary(arg, opts = {}) {
   const columns = series.map((s, i) => {
     const snap = s.snapshot || {};
     const isCurrent = i === 0;
-    const base = snap.snapshot_date
+    const label = snap.snapshot_date
       ? formatMonthYear(snap.snapshot_date, locale)
       : (isCurrent ? t('report.ratio.global') : `#${i}`);
-    // Match the 2022 reference rapport: the current column is prefixed with
-    // "Portefeuille" so it reads as "today's portfolio" rather than just a
-    // date. History columns keep the bare date so they don't distract.
-    const label = isCurrent && snap.snapshot_date
-      ? `${t('report.ratio.current_prefix')} ${base.toLowerCase()}`
-      : base;
     return { key: `col-${i}`, label, isCurrent, snapshot_date: snap.snapshot_date || null };
   });
 

@@ -830,6 +830,11 @@ button { font-family: inherit; }
   font-size: 13.5px; color: var(--text-2);
   line-height: 1.45;
   max-width: 720px;
+  /* Prevent orphan last lines: s3's longer description wrapped a tiny
+   * "sont mis en évidence." onto a line by itself, which read as if a
+   * stray \n had been inserted. text-wrap: pretty rebalances so the
+   * trailing fragment shares space with the previous line. */
+  text-wrap: pretty;
 }
 
 .dash-grid {
@@ -2116,14 +2121,13 @@ button { font-family: inherit; }
  * thematic chunks (overview → demographics → ... → claims) so the table
  * reads top-to-bottom as a story instead of an undifferentiated wall. */
 .ratio-section-head-row td.ratio-section-head {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  color: var(--muted);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 8px 10px 6px;
-  border-left: 3px solid color-mix(in srgb, var(--accent) 60%, transparent);
   border-top: 1px solid var(--border);
 }
 .rp-table .ratio-section-head-row td.ratio-section-head {
