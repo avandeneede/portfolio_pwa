@@ -1,269 +1,334 @@
-// Preprocess the Statbel statistical-sectors GeoJSON into a compact SVG-ready
-// municipalities file for the dashboard choropleth.
+// Build the choropleth dataset from the miambe Belgian municipality polygons +
+// the spatie postcode→lat/lng table. We pivot from name-based matching to
+// postcode-based matching: broker exports include sub-locality names like
+// "STAMBRUGES" or "Maffle" that don't match Statbel's commune names ("Beloeil",
+// "Ath"). Postcodes are stable identifiers that don't have this issue.
 //
-// Source (~212MB, EPSG:3812 Belgian Lambert):
-//   sh_statbel_statistical_sectors_3812_20230101.geojson
+// Inputs (downloaded/cloned ahead of time):
+//   1. miambe repo with one geojson file per main CP and a tab-separated
+//      `Municipality\tZipCode` list. Each polygon is in WGS84 (lng, lat).
+//      Repo: https://github.com/miambe/Municipalities-in-Belgium
+//   2. spatie CSV mapping every Belgian postcode to (locality name, lat, lng).
+//      Repo: https://github.com/spatie/belgian-cities-geocoded
+//   3. (optional) the previous Statbel-derived be_municipalities.json, used
+//      ONLY to recover dual FR/NL names per commune. Falls back to the miambe
+//      single-name if absent.
 //
-// The source has ~19,800 statistical sectors; we want ~581 dissolved
-// municipalities. Strategy:
-//
-//   1. Read every sector, normalise its outer ring to integer-metre
-//      precision (the source already shares vertices on adjacent sectors
-//      bit-for-bit, so integer rounding is just safety against IEEE noise).
-//   2. Per municipality (cd_munty_refnis), tally undirected edges across all
-//      its sectors. Edges shared by exactly 2 sectors of the same muni are
-//      *interior* — drop them. Edges with odd multiplicity (almost always 1)
-//      are *boundary* — keep them.
-//   3. Stitch boundary edges into closed rings by following point→edge
-//      adjacency. Each connected component becomes one ring (outer or hole).
-//   4. Simplify each dissolved ring with decimation + min-distance.
-//   5. Linearly map EPSG:3812 metres → SVG viewBox (Y-flipped).
-//
-// Run:
-//   node tools/build-municipalities.mjs <path-to-source.geojson>
-//
-// Output:
-//   data/be_municipalities.json
+// Output: data/be_municipalities.json
 //   {
 //     viewBox: "0 0 1000 H",
 //     features: [
-//       { nis: "11001", name_fr: "Aartselaar", name_nl: "Aartselaar", d: "M ... Z M ... Z" },
+//       { cp: "7972", name_fr: "Beloeil", name_nl: "Beloeil", d: "M ... Z" },
 //       ...
-//     ]
+//     ],
+//     cpToCanonical: { "7973": "7972", "1020": "1000", ... }   // every Belgian CP
 //   }
+//
+// Run:
+//   node tools/build-municipalities.mjs <miambe-dir> [spatie-csv-or-cache]
+//
+// The script does point-in-polygon tests in WGS84 (Belgium is small enough that
+// lng/lat ray-casting is accurate to a few metres at this scale) — no proj4
+// dependency, no CSP risk in the runtime bundle.
 
-import { createReadStream, writeFileSync } from 'node:fs';
-import { createInterface } from 'node:readline';
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..');
 const OUT_PATH = join(REPO_ROOT, 'data', 'be_municipalities.json');
+const OLD_OUT_PATH = OUT_PATH;  // re-read for dual-name fallback
 
-// Decimation on the *dissolved* boundary (much sparser than per-sector).
-const DECIMATE = 8;
-// Min distance between kept vertices on the dissolved boundary, metres.
-// At 1000px/270km ≈ 3.7px/km, anything closer than 700m is sub-pixel.
-const MIN_DIST_M = 700;
-// Drop dissolved rings smaller than this — slivers from imperfect topology.
-const MIN_RING_BBOX_M2 = 500_000;
+// SVG viewBox width. Height is derived from Belgium's aspect ratio.
+const VW = 1000;
+// Decimate every Nth point on each ring + min-distance threshold (in SVG
+// units). Belgium's bbox at viewBox 1000 wide ≈ 3.8 px/km; below 1px is
+// sub-pixel and contributes no visible detail.
+const DECIMATE = 3;
+const MIN_DIST = 0.6;
 const MIN_RING_POINTS = 4;
 
 function dec2(n) { return Math.round(n * 100) / 100; }
 
-// Canonical edge key — endpoints sorted, integer metres, joined.
-function edgeKey(ax, ay, bx, by) {
-  if (ax < bx || (ax === bx && ay < by)) return `${ax},${ay}|${bx},${by}`;
-  return `${bx},${by}|${ax},${ay}`;
+function normaliseName(s) {
+  if (!s) return '';
+  return String(s)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[\s'\-]+/g, '');
 }
-function pointKey(x, y) { return `${x},${y}`; }
-function parsePoint(k) { const [x, y] = k.split(',').map(Number); return [x, y]; }
 
-function simplifyRing(ring) {
+// Ray-casting point-in-polygon in lng/lat. Belgium spans <300km so the
+// flat-earth approximation introduces sub-metre error per check, which is fine
+// for "which commune contains this CP centroid?".
+function pointInRing(lng, lat, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    const intersects = ((yi > lat) !== (yj > lat))
+      && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+// Bounding box for fast PIP rejection.
+function ringBBox(ring) {
+  let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity;
+  for (const [x, y] of ring) {
+    if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+    if (y < mny) mny = y; if (y > mxy) mxy = y;
+  }
+  return { mnx, mny, mxx, mxy };
+}
+
+// Minimal CSV parser for the spatie file: 5 columns, the 2nd is quoted with no
+// commas inside (locality names use hyphens/spaces but no commas), the 5th is
+// quoted province name. Header: postal,name,lat,lng,province
+function parseSpatieCsv(text) {
   const out = [];
-  let lastX = NaN, lastY = NaN;
-  for (let i = 0; i < ring.length; i++) {
-    const isLast = i === ring.length - 1;
-    if (i !== 0 && !isLast && i % DECIMATE !== 0) continue;
-    const [x, y] = ring[i];
-    if (!isLast && !Number.isNaN(lastX)) {
-      const dx = x - lastX, dy = y - lastY;
-      if (dx * dx + dy * dy < MIN_DIST_M * MIN_DIST_M) continue;
-    }
-    out.push([x, y]);
-    lastX = x; lastY = y;
+  const lines = text.split(/\r?\n/);
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    // Match: 1234,"Name with stuff",50.123,4.567,"Province name"
+    const m = line.match(/^"?(\d{4})"?,"([^"]*)",([-\d.]+),([-\d.]+),"([^"]*)"$/);
+    if (!m) continue;
+    out.push({
+      cp: m[1],
+      name: m[2],
+      lat: Number(m[3]),
+      lng: Number(m[4]),
+    });
   }
   return out;
 }
 
-// Stitch boundary edges into closed rings.
-function stitchRings(edges) {
-  // Build adjacency: point → set of partner points (still in pool).
-  const adj = new Map();
-  const addAdj = (a, b) => {
-    if (!adj.has(a)) adj.set(a, []);
-    adj.get(a).push(b);
-  };
-  for (const k of edges) {
-    const [a, b] = k.split('|');
-    addAdj(a, b);
-    addAdj(b, a);
+async function fetchSpatie(cachePath) {
+  if (cachePath && existsSync(cachePath)) {
+    return readFileSync(cachePath, 'utf8');
   }
-  const rings = [];
-  while (adj.size > 0) {
-    // Pick any starting point with edges left.
-    let start = null;
-    for (const [p, neighbours] of adj) {
-      if (neighbours.length > 0) { start = p; break; }
-    }
-    if (!start) break;
-    const ring = [];
-    let cur = start;
-    let prev = null;
-    let safety = 0;
-    while (safety++ < 100_000) {
-      ring.push(parsePoint(cur));
-      const neighbours = adj.get(cur) || [];
-      if (neighbours.length === 0) break;
-      // Prefer the neighbour that isn't `prev` so we walk forward; if only
-      // prev is available, the ring closes.
-      let nextIdx = -1;
-      for (let i = 0; i < neighbours.length; i++) {
-        if (neighbours[i] !== prev) { nextIdx = i; break; }
-      }
-      if (nextIdx === -1) nextIdx = 0;
-      const next = neighbours[nextIdx];
-      // Consume the undirected edge from both ends.
-      neighbours.splice(nextIdx, 1);
-      if (neighbours.length === 0) adj.delete(cur);
-      const back = adj.get(next);
-      if (back) {
-        const bi = back.indexOf(cur);
-        if (bi >= 0) back.splice(bi, 1);
-        if (back.length === 0) adj.delete(next);
-      }
-      if (next === start) break;
-      prev = cur;
-      cur = next;
-    }
-    if (ring.length >= MIN_RING_POINTS) rings.push(ring);
-  }
-  return rings;
+  const url = 'https://raw.githubusercontent.com/spatie/belgian-cities-geocoded/master/belgian-cities-geocoded.csv';
+  console.log(`fetching spatie CSV from ${url}...`);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`spatie fetch ${res.status}`);
+  const text = await res.text();
+  if (cachePath) writeFileSync(cachePath, text);
+  return text;
 }
 
 async function main() {
-  const src = process.argv[2];
-  if (!src) {
-    console.error('usage: node tools/build-municipalities.mjs <source.geojson>');
+  const miambeDir = process.argv[2];
+  const spatieCache = process.argv[3] || '/tmp/spatie-be-cities.csv';
+  if (!miambeDir) {
+    console.error('usage: node tools/build-municipalities.mjs <miambe-dir> [spatie-cache.csv]');
     process.exit(1);
   }
-  console.log(`reading ${src}...`);
 
-  // Per-NIS edge tally: NIS -> Map(edgeKey -> count).
-  const niMeta = new Map();         // NIS -> { name_fr, name_nl }
-  const edgeTally = new Map();      // NIS -> Map(edgeKey -> count)
-  const global = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-  let featureCount = 0;
-
-  const stream = createReadStream(src);
-  const rl = createInterface({ input: stream, crlfDelay: Infinity });
-
-  for await (const rawLine of rl) {
-    let line = rawLine.trim();
-    if (!line.startsWith('{ "type": "Feature"')) continue;
-    if (line.endsWith(',')) line = line.slice(0, -1);
-    let feat;
-    try { feat = JSON.parse(line); } catch { continue; }
-    const props = feat.properties || {};
-    const nis = props.cd_munty_refnis;
-    if (!nis) continue;
-    const geom = feat.geometry;
-    if (!geom) continue;
-    let polys;
-    if (geom.type === 'Polygon') polys = [geom.coordinates];
-    else if (geom.type === 'MultiPolygon') polys = geom.coordinates;
-    else continue;
-
-    if (!niMeta.has(nis)) {
-      niMeta.set(nis, {
-        name_fr: props.tx_munty_descr_fr || nis,
-        name_nl: props.tx_munty_descr_nl || nis,
-      });
-    }
-    let tally = edgeTally.get(nis);
-    if (!tally) { tally = new Map(); edgeTally.set(nis, tally); }
-
-    for (const poly of polys) {
-      const outer = poly[0];
-      if (!outer || outer.length < 3) continue;
-      // Round to integer metres so adjacent sectors hash to identical keys.
-      let prevX = null, prevY = null;
-      for (let i = 0; i < outer.length; i++) {
-        const x = Math.round(outer[i][0]);
-        const y = Math.round(outer[i][1]);
-        if (x < global.minX) global.minX = x;
-        if (y < global.minY) global.minY = y;
-        if (x > global.maxX) global.maxX = x;
-        if (y > global.maxY) global.maxY = y;
-        if (prevX !== null) {
-          if (x !== prevX || y !== prevY) {
-            const k = edgeKey(prevX, prevY, x, y);
-            tally.set(k, (tally.get(k) || 0) + 1);
-          }
+  // ---- 1. Read miambe geojson polygons -----------------------------------
+  console.log(`reading miambe geojson from ${miambeDir}/geojson...`);
+  const polys = [];   // { cp, ring: [[lng,lat], ...], bbox }
+  const geoDir = join(miambeDir, 'geojson');
+  for (const f of readdirSync(geoDir)) {
+    const m = f.match(/^(\d{4})\.geojson$/);
+    if (!m) continue;
+    const data = JSON.parse(readFileSync(join(geoDir, f), 'utf8'));
+    for (const feat of data.features || []) {
+      const g = feat.geometry;
+      if (!g) continue;
+      // Three miambe files use GeometryCollection (1050 Ixelles, 2387 Baarle,
+      // 6780 Messancy). Flatten them to Polygon/MultiPolygon.
+      const geoms = g.type === 'GeometryCollection' ? (g.geometries || []) : [g];
+      let rings = [];
+      for (const sub of geoms) {
+        if (!sub) continue;
+        if (sub.type === 'Polygon') rings.push(sub.coordinates[0]);
+        else if (sub.type === 'MultiPolygon') {
+          for (const p of sub.coordinates) rings.push(p[0]);
         }
-        prevX = x; prevY = y;
+      }
+      if (rings.length === 0) continue;
+      for (const ring of rings) {
+        if (!ring || ring.length < 4) continue;
+        polys.push({ cp: m[1], ring, bbox: ringBBox(ring) });
       }
     }
-    featureCount++;
-    if (featureCount % 5000 === 0) {
-      console.log(`  ...${featureCount} sectors, ${niMeta.size} municipalities`);
+  }
+  console.log(`  read ${polys.length} polygons across ${new Set(polys.map((p) => p.cp)).size} CPs`);
+
+  // ---- 2. Read miambe Municipality↔CP table ------------------------------
+  const listText = readFileSync(join(miambeDir, 'list_sorted_by_zipcode.txt'), 'utf8');
+  const cpToMiambeName = new Map();
+  for (const line of listText.split(/\r?\n/).slice(1)) {
+    const t = line.split('\t');
+    if (t.length < 2) continue;
+    const name = t[0].trim();
+    const cp = t[1].trim();
+    if (!name || !cp) continue;
+    cpToMiambeName.set(cp, name);
+  }
+  console.log(`  miambe name table: ${cpToMiambeName.size} entries`);
+
+  // ---- 3. Recover dual FR/NL names from the previous Statbel build -------
+  // Optional, best-effort. If the file isn't there or names don't match, we
+  // fall back to the miambe single name (which is already FR or NL depending
+  // on region).
+  const dualByNorm = new Map();   // normalisedName → { name_fr, name_nl }
+  if (existsSync(OLD_OUT_PATH)) {
+    try {
+      const old = JSON.parse(readFileSync(OLD_OUT_PATH, 'utf8'));
+      for (const f of old.features || []) {
+        if (f.name_fr && f.name_nl) {
+          const dual = { name_fr: f.name_fr, name_nl: f.name_nl };
+          if (f.name_fr) dualByNorm.set(normaliseName(f.name_fr), dual);
+          if (f.name_nl) dualByNorm.set(normaliseName(f.name_nl), dual);
+        }
+      }
+      console.log(`  dual-name index from previous build: ${dualByNorm.size} keys`);
+    } catch (e) {
+      console.warn(`  could not read old build for dual names: ${e.message}`);
     }
   }
 
-  console.log(`parsed ${featureCount} sectors → ${niMeta.size} municipalities`);
-  console.log(`bbox (3812): X=[${global.minX}..${global.maxX}] Y=[${global.minY}..${global.maxY}]`);
+  // ---- 4. Read spatie CP→lat/lng (every Belgian CP) ----------------------
+  const spatieText = await fetchSpatie(spatieCache);
+  const spatieRows = parseSpatieCsv(spatieText);
+  console.log(`  spatie CSV: ${spatieRows.length} CP+locality rows`);
+  const allCps = new Set(spatieRows.map((r) => r.cp));
+  console.log(`  distinct broker CPs: ${allCps.size}`);
 
-  // For each NIS, keep boundary edges (odd multiplicity — almost always 1),
-  // stitch into rings, simplify, store.
-  const dissolved = new Map(); // NIS -> [ring,...]
-  let totalBoundary = 0, totalInterior = 0;
-  for (const [nis, tally] of edgeTally) {
-    const boundary = [];
-    for (const [k, count] of tally) {
-      if (count % 2 === 1) { boundary.push(k); totalBoundary++; }
-      else { totalInterior++; }
-    }
-    const rings = stitchRings(boundary);
-    dissolved.set(nis, rings);
+  // ---- 5. Build cpToCanonical ---------------------------------------------
+  // For each spatie CP, decide which miambe-CP polygon it belongs to.
+  //   a) If the CP has its own miambe polygon, it's its own canonical.
+  //   b) Otherwise: take the most-common polygon hit across all spatie rows
+  //      sharing that CP (handles CPs spanning multiple sub-localities — the
+  //      majority centroid wins).
+  const polyCpSet = new Set(polys.map((p) => p.cp));
+  const tally = new Map();   // cp → Map(canonicalCp → count)
+  let pipFails = 0;
+
+  // Group spatie rows by CP for batch PIP.
+  const rowsByCp = new Map();
+  for (const r of spatieRows) {
+    let arr = rowsByCp.get(r.cp);
+    if (!arr) { arr = []; rowsByCp.set(r.cp, arr); }
+    arr.push(r);
   }
-  console.log(`edges: ${totalBoundary} boundary, ${totalInterior} interior dropped`);
 
-  // Map EPSG:3812 metres → SVG viewBox. Y-flip (3812 north-positive, SVG down).
-  const VW = 1000;
-  const spanX = global.maxX - global.minX;
-  const spanY = global.maxY - global.minY;
-  const VH = Math.round(VW * (spanY / spanX));
-  const scale = VW / spanX;
+  for (const [cp, rows] of rowsByCp) {
+    if (polyCpSet.has(cp)) {
+      tally.set(cp, new Map([[cp, 1]]));
+      continue;
+    }
+    // PIP every centroid; aggregate hits.
+    const hits = new Map();
+    for (const r of rows) {
+      let found = null;
+      for (const p of polys) {
+        const { mnx, mny, mxx, mxy } = p.bbox;
+        if (r.lng < mnx || r.lng > mxx || r.lat < mny || r.lat > mxy) continue;
+        if (pointInRing(r.lng, r.lat, p.ring)) { found = p.cp; break; }
+      }
+      if (found) hits.set(found, (hits.get(found) || 0) + 1);
+    }
+    if (hits.size === 0) { pipFails++; continue; }
+    tally.set(cp, hits);
+  }
+
+  const cpToCanonical = {};
+  for (const [cp, hits] of tally) {
+    let best = null, bestN = -1;
+    for (const [c, n] of hits) {
+      if (n > bestN) { best = c; bestN = n; }
+    }
+    if (best) cpToCanonical[cp] = best;
+  }
+  console.log(`  cpToCanonical: ${Object.keys(cpToCanonical).length} entries (PIP miss: ${pipFails})`);
+
+  // ---- 6. Project polygons to SVG viewBox --------------------------------
+  // Equirectangular with cos(lat_center) correction. Belgium is small enough
+  // that this gives a recognisable shape; we're not making a navigational map.
+  let lngMin = Infinity, lngMax = -Infinity, latMin = Infinity, latMax = -Infinity;
+  for (const p of polys) {
+    const { mnx, mny, mxx, mxy } = p.bbox;
+    if (mnx < lngMin) lngMin = mnx;
+    if (mxx > lngMax) lngMax = mxx;
+    if (mny < latMin) latMin = mny;
+    if (mxy > latMax) latMax = mxy;
+  }
+  const latCenter = (latMin + latMax) / 2;
+  const cosLat = Math.cos(latCenter * Math.PI / 180);
+  const xSpan = (lngMax - lngMin) * cosLat;
+  const ySpan = latMax - latMin;
+  const VH = Math.round(VW * (ySpan / xSpan));
+  const sx = VW / xSpan;
+  const sy = VH / ySpan;
+  function project(lng, lat) {
+    const x = (lng - lngMin) * cosLat * sx;
+    const y = VH - (lat - latMin) * sy;
+    return [x, y];
+  }
+
+  // ---- 7. Group polygons per CP, simplify, emit features -----------------
+  const polysByCp = new Map();
+  for (const p of polys) {
+    let arr = polysByCp.get(p.cp);
+    if (!arr) { arr = []; polysByCp.set(p.cp, arr); }
+    arr.push(p);
+  }
+
+  function simplify(ring) {
+    const out = [];
+    let lastX = NaN, lastY = NaN;
+    for (let i = 0; i < ring.length; i++) {
+      const isLast = i === ring.length - 1;
+      if (i !== 0 && !isLast && i % DECIMATE !== 0) continue;
+      const [x, y] = ring[i];
+      if (!isLast && !Number.isNaN(lastX)) {
+        const dx = x - lastX, dy = y - lastY;
+        if (dx * dx + dy * dy < MIN_DIST * MIN_DIST) continue;
+      }
+      out.push([x, y]);
+      lastX = x; lastY = y;
+    }
+    return out;
+  }
 
   const features = [];
   let droppedTiny = 0;
-  for (const [nis, meta] of [...niMeta.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-    const rings = dissolved.get(nis) || [];
+  for (const [cp, ps] of [...polysByCp.entries()].sort()) {
     const subpaths = [];
-    for (const ring of rings) {
-      // Drop slivers below threshold.
-      let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity;
-      for (const [x, y] of ring) {
-        if (x < mnx) mnx = x; if (x > mxx) mxx = x;
-        if (y < mny) mny = y; if (y > mxy) mxy = y;
-      }
-      if ((mxx - mnx) * (mxy - mny) < MIN_RING_BBOX_M2) { droppedTiny++; continue; }
-      const simp = simplifyRing(ring);
+    for (const p of ps) {
+      const proj = p.ring.map(([lng, lat]) => project(lng, lat));
+      const simp = simplify(proj);
       if (simp.length < MIN_RING_POINTS) { droppedTiny++; continue; }
-      const parts = [];
-      for (let i = 0; i < simp.length; i++) {
-        const x = (simp[i][0] - global.minX) * scale;
-        const y = VH - (simp[i][1] - global.minY) * scale;
-        parts.push(`${i === 0 ? 'M' : 'L'}${dec2(x)} ${dec2(y)}`);
-      }
+      const parts = simp.map(([x, y], i) =>
+        `${i === 0 ? 'M' : 'L'}${dec2(x)} ${dec2(y)}`);
       parts.push('Z');
       subpaths.push(parts.join(' '));
     }
-    if (subpaths.length === 0) {
-      console.warn(`  WARN no rings for NIS ${nis} (${meta.name_fr})`);
-      continue;
-    }
+    if (subpaths.length === 0) continue;
+    const miambeName = cpToMiambeName.get(cp) || cp;
+    const dual = dualByNorm.get(normaliseName(miambeName));
     features.push({
-      nis,
-      name_fr: meta.name_fr,
-      name_nl: meta.name_nl,
+      cp,
+      name_fr: dual?.name_fr || miambeName,
+      name_nl: dual?.name_nl || miambeName,
       d: subpaths.join(' '),
     });
   }
-  console.log(`${features.length} municipality features (${droppedTiny} tiny rings dropped)`);
+  console.log(`  ${features.length} CP features (${droppedTiny} tiny rings dropped)`);
 
-  const out = { viewBox: `0 0 ${VW} ${VH}`, features };
+  // Sanity: every polygon CP should also appear in cpToCanonical mapping to
+  // itself; if not, broker rows on that CP would silently fail PIP.
+  for (const cp of polysByCp.keys()) {
+    if (!cpToCanonical[cp]) cpToCanonical[cp] = cp;
+  }
+
+  // ---- 8. Write -----------------------------------------------------------
+  const out = { viewBox: `0 0 ${VW} ${VH}`, features, cpToCanonical };
   const json = JSON.stringify(out);
   writeFileSync(OUT_PATH, json);
   const sizeKb = (json.length / 1024).toFixed(1);

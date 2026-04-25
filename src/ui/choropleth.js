@@ -1,37 +1,37 @@
-// Inline-SVG choropleth of Belgian municipalities. No external library, no
-// tile server, no innerHTML — every node is created via createElementNS for
-// CSP-safety (the same pattern as charts.js).
+// Inline-SVG choropleth of Belgian communes, keyed by postcode. We render
+// every node via createElementNS for CSP safety (style-src 'self' drops any
+// stringified `style="..."` attributes — see charts.js for the same pattern).
 //
-// The data file `data/be_municipalities.json` is precached by the SW; we
-// fetch it lazily on first render and memoise the result so subsequent
-// dashboards share the parsed file.
+// Data comes from `data/be_municipalities.json`, built by
+// `tools/build-municipalities.mjs`:
+//   {
+//     viewBox: "0 0 1000 H",
+//     features: [{ cp, name_fr, name_nl, d }, ...],
+//     cpToCanonical: { "1020": "1000", "7973": "7970", ... }   // every Belgian CP
+//   }
 //
-// Coloring: a 5-step quantile-ish scale anchored on the number of clients
-// per municipality. Buckets are computed from the *non-empty* count
-// distribution so a long tail of single-client communes doesn't drown out
-// the map. Empty munis render as a neutral gray fill.
+// Matching: broker exports include CP + a localité name. The localité is often
+// a sub-area ("STAMBRUGES" inside Beloeil's CP 7973) that doesn't match
+// commune name lists. We match strictly by CP via `cpToCanonical`, which was
+// built at compile time using point-in-polygon centroids from the spatie CP
+// table. No fuzzy name matching, no broker-data quirks.
 //
-// Hover tooltip: SVG <foreignObject> with a styled <div> (same CSP-safe
-// trick as the line-chart tooltip in charts.js — set `display: none` via
-// CSSOM after creation, not via a string `style` attribute, otherwise
-// `style-src 'self'` drops it and the empty box flashes).
+// Colour: continuous (sqrt-interpolated) from --choropleth-low → --choropleth-high.
+// Sqrt compresses long tails (one commune with 80 clients next to many with 1).
+// Empty communes use --choropleth-empty (neutral fill).
+//
+// Interaction: hover/focus shows a tooltip with CP, name, count, %. Wheel
+// zooms (anchored to cursor), drag pans, double-click resets.
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const DATA_PATH = './data/be_municipalities.json';
 
-// Five sequential blues from the existing chart palette. Index 0 = lightest
-// for the smallest non-empty bucket, index 4 = deepest blue for the top.
-const SCALE_VARS = [
-  '--choropleth-1',
-  '--choropleth-2',
-  '--choropleth-3',
-  '--choropleth-4',
-  '--choropleth-5',
-];
 const EMPTY_VAR = '--choropleth-empty';
+const LOW_VAR = '--choropleth-low';
+const HIGH_VAR = '--choropleth-high';
 
-let _cache = null;        // resolved data
-let _inflight = null;     // in-flight fetch promise (dedupe concurrent calls)
+let _cache = null;
+let _inflight = null;
 
 export async function loadMunicipalities() {
   if (_cache) return _cache;
@@ -42,77 +42,77 @@ export async function loadMunicipalities() {
       return r.json();
     })
     .then((data) => {
-      // Build name → NIS index for fast localite matching. We index both
-      // FR and NL canonical names since brokers export either depending on
-      // the region.
-      const byName = new Map();
-      for (const f of data.features) {
-        const fr = normaliseName(f.name_fr);
-        const nl = normaliseName(f.name_nl);
-        if (fr) byName.set(fr, f.nis);
-        if (nl && !byName.has(nl)) byName.set(nl, f.nis);
-      }
-      _cache = { ...data, byName };
+      // cpToCanonical is a plain object in JSON. Wrap as a Map for O(1) lookup
+      // semantics matching the rest of the codebase.
+      const cpToCanonical = new Map(Object.entries(data.cpToCanonical || {}));
+      _cache = { ...data, cpToCanonical };
       return _cache;
     })
     .catch((err) => { _inflight = null; throw err; });
   return _inflight;
 }
 
-// Normalise a commune name for lookup: lowercase, strip diacritics, strip
-// hyphens/apostrophes/spaces. Keeps the key tolerant to broker-export quirks
-// ("Bruxelles" vs "Bruxelles-Capitale", "Sint-Truiden" vs "Sint Truiden",
-// "L'Écluse" vs "L'écluse").
-function normaliseName(s) {
-  if (!s) return '';
-  return String(s)
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[\s'\-]+/g, '');
+/**
+ * Group broker geographic-profile rows (CP, count) by canonical polygon-CP.
+ *
+ * @param {Array<{code_postal: string, count: number}>} rows
+ * @param {Map<string,string>} cpToCanonical
+ * @returns {{counts: Map<string,number>, mapped: number, total: number, unmapped: Array}}
+ */
+export function resolveCountsByPostcode(rows, cpToCanonical) {
+  const counts = new Map();
+  const unmapped = [];
+  let mapped = 0, total = 0;
+  for (const r of rows) {
+    const cp = String(r.code_postal ?? '').trim();
+    const c = r.count || 0;
+    total += c;
+    if (!cp || cp.toLowerCase() === 'none') {
+      unmapped.push({ code_postal: cp, count: c, reason: 'empty' });
+      continue;
+    }
+    const canonical = cpToCanonical.get(cp);
+    if (!canonical) {
+      unmapped.push({ code_postal: cp, count: c, reason: 'no-polygon' });
+      continue;
+    }
+    counts.set(canonical, (counts.get(canonical) || 0) + c);
+    mapped += c;
+  }
+  return { counts, mapped, total, unmapped };
 }
 
-// Compute 5 quantile-ish buckets from the non-empty count distribution.
-// Pure quantiles can collapse when most municipalities have 1 client; we
-// special-case so the smallest bucket is always [1, q1] inclusive.
-function bucketize(counts) {
-  const arr = [...counts.values()].filter((v) => v > 0).sort((a, b) => a - b);
-  if (arr.length === 0) return { thresholds: [], max: 0 };
-  const max = arr[arr.length - 1];
-  if (arr.length < 5) {
-    return { thresholds: arr, max };
-  }
-  const thresholds = [];
-  for (let i = 1; i <= 4; i++) {
-    thresholds.push(arr[Math.floor(arr.length * i / 5)]);
-  }
-  thresholds.push(max);
-  return { thresholds, max };
-}
-
-function bucketIndex(count, thresholds) {
-  if (count <= 0) return -1;
-  for (let i = 0; i < thresholds.length; i++) {
-    if (count <= thresholds[i]) return i;
-  }
-  return thresholds.length - 1;
+// Continuous colour ramp. Read the two end-stops from CSS so dark mode flips
+// them automatically. We compute mix percentages with `color-mix()` which is
+// supported in all the browsers we target (modern PWAs, last-2 strategy).
+//
+// Sqrt scaling: small counts already get a visible tint without long tails
+// drowning out everything else. Tunable via `gamma` if needed.
+function colorFor(count, max, gamma = 0.5) {
+  if (count <= 0 || max <= 0) return `var(${EMPTY_VAR})`;
+  const t = Math.min(1, Math.pow(count / max, gamma));
+  const pct = (t * 100).toFixed(1);
+  // color-mix interpolates in OKLCH which avoids the muddy mid-greys of RGB.
+  return `color-mix(in oklch, var(${LOW_VAR}), var(${HIGH_VAR}) ${pct}%)`;
 }
 
 /**
- * Build the choropleth SVG.
+ * Build the choropleth SVG with pan/zoom interactions.
  *
  * @param {{
- *   data: { viewBox: string, features: Array<{nis,name_fr,name_nl,d}>, byName: Map },
- *   counts: Map<string, number>,             // NIS → client count
- *   localiteToNis?: Map<string, string>,     // optional: pre-resolved CP-localite → NIS map
+ *   data: { viewBox: string, features: Array<{cp,name_fr,name_nl,d}>, cpToCanonical: Map },
+ *   counts: Map<string, number>,             // canonical-CP → client count
  *   total: number,
  *   t: (key: string) => string,
  *   labelLang?: 'fr'|'nl',
  * }} args
+ * @returns {{ svg: SVGElement, max: number }}
  */
 export function municipalityChoropleth(args) {
   const { data, counts, total, t, labelLang } = args;
   const lang = labelLang === 'nl' ? 'nl' : 'fr';
-  const { thresholds, max } = bucketize(counts);
+  let max = 0;
+  for (const v of counts.values()) if (v > max) max = v;
 
   const root = svg('svg', {
     viewBox: data.viewBox,
@@ -122,31 +122,109 @@ export function municipalityChoropleth(args) {
     preserveAspectRatio: 'xMidYMid meet',
   });
 
-  // Background subtle wash so empty (no clients) communes still read as
-  // map shapes, not as transparent holes.
+  // All paths live inside a single <g> so we can apply a single `transform`
+  // attribute for pan/zoom — and so the tooltip's foreignObject stays in
+  // unscaled SVG space (otherwise zooming would also scale the tooltip).
+  const stage = svg('g', { class: 'choropleth-stage' });
+  root.appendChild(stage);
+
   const paths = [];
   for (const f of data.features) {
-    const count = counts.get(f.nis) || 0;
-    const bIdx = bucketIndex(count, thresholds);
-    const fillVar = bIdx < 0 ? EMPTY_VAR : SCALE_VARS[bIdx];
+    const count = counts.get(f.cp) || 0;
     const path = svg('path', {
       d: f.d,
-      fill: `var(${fillVar})`,
+      fill: colorFor(count, max),
       stroke: 'var(--choropleth-stroke)',
       'stroke-width': 0.4,
-      'data-nis': f.nis,
+      'data-cp': f.cp,
       'data-name': lang === 'nl' ? f.name_nl : f.name_fr,
       'data-count': count,
       class: 'choropleth-muni',
     });
     paths.push(path);
-    root.appendChild(path);
+    stage.appendChild(path);
   }
 
-  // Tooltip overlay: same SVG <foreignObject>+<div> pattern as the line
-  // chart. Hidden via CSSOM (CSP-safe), shown on path hover/focus.
+  // ---- Pan / zoom state. We track viewBox-space transform: scale + tx/ty.
+  // The actual `transform` attribute is on the stage <g>, so the tooltip
+  // (rendered later in unscaled space) keeps a consistent on-screen size.
+  const initialVB = data.viewBox.split(' ').map(Number);
+  const [, , vbW, vbH] = initialVB;
+  let scale = 1, tx = 0, ty = 0;
+  function applyTransform() {
+    stage.setAttribute('transform', `translate(${tx} ${ty}) scale(${scale})`);
+  }
+  function clamp() {
+    // Keep the map within the viewBox: at scale=1 the offsets are 0; as we
+    // zoom in, allow panning by up to (vb*(scale-1)) in each direction.
+    const minTx = vbW * (1 - scale);
+    const minTy = vbH * (1 - scale);
+    if (tx > 0) tx = 0; if (tx < minTx) tx = minTx;
+    if (ty > 0) ty = 0; if (ty < minTy) ty = minTy;
+  }
+
+  // Wheel: zoom anchored at the cursor. We convert the wheel event's client
+  // coords into SVG viewBox coords via getScreenCTM(), then adjust tx/ty so
+  // the point under the cursor stays put.
+  root.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const ctm = stage.getScreenCTM();
+    if (!ctm) return;
+    const pt = root.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const local = pt.matrixTransform(ctm.inverse());  // in stage's local (pre-transform) coords
+    const factor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+    const newScale = Math.max(1, Math.min(20, scale * factor));
+    if (newScale === scale) return;
+    // Anchor: stage_x = (svg_x - tx) / scale  → must remain `local.x`.
+    // After zoom: svg_x = local.x * newScale + new_tx → solve new_tx.
+    // We computed local in pre-transform coords; the on-screen anchor in
+    // viewBox space is (local.x * scale + tx). Keep that fixed.
+    const anchorVbX = local.x * scale + tx;
+    const anchorVbY = local.y * scale + ty;
+    tx = anchorVbX - local.x * newScale;
+    ty = anchorVbY - local.y * newScale;
+    scale = newScale;
+    clamp();
+    applyTransform();
+  }, { passive: false });
+
+  // Drag pan. Mouse + touch via Pointer Events.
+  let dragging = false, lastX = 0, lastY = 0;
+  root.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    root.setPointerCapture?.(e.pointerId);
+    root.classList.add('is-dragging');
+  });
+  root.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    // Convert client-space delta into viewBox-space delta via CTM.
+    const ctm = root.getScreenCTM();
+    if (!ctm) return;
+    const dx = (e.clientX - lastX) / ctm.a;
+    const dy = (e.clientY - lastY) / ctm.d;
+    lastX = e.clientX; lastY = e.clientY;
+    tx += dx; ty += dy;
+    clamp(); applyTransform();
+  });
+  function endDrag(e) {
+    if (!dragging) return;
+    dragging = false;
+    root.releasePointerCapture?.(e.pointerId);
+    root.classList.remove('is-dragging');
+  }
+  root.addEventListener('pointerup', endDrag);
+  root.addEventListener('pointercancel', endDrag);
+
+  // Double-click resets. Less surprising than ctrl/cmd-zero on a chart.
+  root.addEventListener('dblclick', () => {
+    scale = 1; tx = 0; ty = 0; applyTransform();
+  });
+
+  // ---- Tooltip overlay (CSP-safe: <foreignObject> + <div>, hidden via CSSOM).
   const tipFo = svg('foreignObject', {
-    x: 0, y: 0, width: 220, height: 60,
+    x: 0, y: 0, width: 240, height: 64,
     class: 'choropleth-tip-fo',
   });
   tipFo.style.overflow = 'visible';
@@ -166,28 +244,32 @@ export function municipalityChoropleth(args) {
 
   let highlighted = null;
   function showTip(target) {
-    const nis = target.getAttribute('data-nis');
+    if (dragging) return;
+    const cp = target.getAttribute('data-cp');
     const name = target.getAttribute('data-name');
     const count = Number(target.getAttribute('data-count') || 0);
     const pct = total > 0 ? (count / total * 100) : 0;
-    tipName.textContent = name;
+    tipName.textContent = `${cp} · ${name}`;
     tipCount.textContent = count > 0
       ? `${count} ${t('choropleth.tip.clients')} · ${pct.toFixed(1)}%`
       : t('choropleth.tip.no_clients');
-    // Position tooltip near the path centroid (using getBBox in SVG units).
+    // Position tooltip near the path centroid in *post-transform* viewBox
+    // space — getBBox() returns local (pre-transform) coords so we map them.
     const bb = target.getBBox();
-    const tw = 220;
+    const cx = bb.x + bb.width / 2;
+    const cy = bb.y;
+    const vbX = cx * scale + tx;
+    const vbY = cy * scale + ty;
+    const tw = 240;
     const th = count > 0 ? 50 : 36;
-    let tx = bb.x + bb.width / 2 - tw / 2;
-    let ty = bb.y - th - 4;
-    // Clamp inside the viewBox so the tooltip never falls outside the map.
-    const [, , vw, vh] = data.viewBox.split(' ').map(Number);
-    if (tx < 4) tx = 4;
-    if (tx + tw > vw - 4) tx = vw - tw - 4;
-    if (ty < 4) ty = bb.y + bb.height + 4;
-    if (ty + th > vh - 4) ty = vh - th - 4;
-    tipFo.setAttribute('x', String(tx));
-    tipFo.setAttribute('y', String(ty));
+    let tipX = vbX - tw / 2;
+    let tipY = vbY - th - 6;
+    if (tipX < 4) tipX = 4;
+    if (tipX + tw > vbW - 4) tipX = vbW - tw - 4;
+    if (tipY < 4) tipY = vbY + bb.height * scale + 6;
+    if (tipY + th > vbH - 4) tipY = vbH - th - 4;
+    tipFo.setAttribute('x', String(tipX));
+    tipFo.setAttribute('y', String(tipY));
     tipFo.setAttribute('width', String(tw));
     tipFo.setAttribute('height', String(th));
     tipFo.style.display = 'block';
@@ -205,79 +287,54 @@ export function municipalityChoropleth(args) {
     p.addEventListener('focus', (e) => showTip(e.currentTarget));
     p.addEventListener('mouseleave', hideTip);
     p.addEventListener('blur', hideTip);
-    // Make paths focusable for keyboard users.
     p.setAttribute('tabindex', '-1');
   }
   root.addEventListener('mouseleave', hideTip);
 
-  return { svg: root, max, thresholds };
+  return { svg: root, max };
 }
 
 /**
- * Resolve broker geographic-profile rows (CP, localite, count) into a
- * Map<NIS, count> by name-matching against the municipality index.
- *
- * Returns { counts, mapped, total, unmapped: [{cp, localite, count}, ...] }.
- *
- * @param {Array<{code_postal:string, localite:string, count:number}>} rows
- * @param {Map<string,string>} byName  normalised name → NIS index
+ * Render a small continuous-scale legend (gradient bar + min/max labels and a
+ * "no clients" swatch).
  */
-export function resolveCountsByNis(rows, byName) {
-  const counts = new Map();
-  const unmapped = [];
-  let mapped = 0, total = 0;
-  for (const r of rows) {
-    const c = r.count || 0;
-    total += c;
-    const k = normaliseName(r.localite);
-    const nis = k ? byName.get(k) : undefined;
-    if (nis) {
-      counts.set(nis, (counts.get(nis) || 0) + c);
-      mapped += c;
-    } else {
-      unmapped.push({ code_postal: r.code_postal, localite: r.localite, count: c });
-    }
-  }
-  return { counts, mapped, total, unmapped };
-}
-
-/**
- * Render a small colour-scale legend (5 swatches + "no clients" + min/max
- * range labels) for the choropleth.
- */
-export function choroplethLegend({ thresholds, max, t }) {
+export function choroplethLegend({ max, t }) {
   const wrap = document.createElement('div');
   wrap.className = 'choropleth-legend';
+
   const swatches = document.createElement('div');
   swatches.className = 'choropleth-legend-swatches';
-
-  // "No clients" swatch first.
   const empty = document.createElement('span');
   empty.className = 'choropleth-legend-swatch is-empty';
   empty.title = t('choropleth.tip.no_clients');
   swatches.appendChild(empty);
-
-  for (const v of SCALE_VARS) {
-    const sw = document.createElement('span');
-    sw.className = 'choropleth-legend-swatch';
-    sw.style.background = `var(${v})`;
-    swatches.appendChild(sw);
+  const gradient = document.createElement('span');
+  gradient.className = 'choropleth-legend-gradient';
+  // Linear gradient driven by the same OKLCH-mixed end-stops we use for the
+  // map fill. The map uses a sqrt curve, so we sample the gradient at 8
+  // stops along the same curve so the legend visually matches the polygons.
+  const stops = [];
+  for (let i = 0; i <= 8; i++) {
+    const t = i / 8;
+    const pct = (Math.pow(t, 0.5) * 100).toFixed(1);
+    stops.push(`color-mix(in oklch, var(${LOW_VAR}), var(${HIGH_VAR}) ${pct}%) ${(t * 100).toFixed(0)}%`);
   }
+  gradient.style.background = `linear-gradient(to right, ${stops.join(', ')})`;
+  swatches.appendChild(gradient);
   wrap.appendChild(swatches);
+
   const labels = document.createElement('div');
   labels.className = 'choropleth-legend-labels';
   const left = document.createElement('span');
-  left.textContent = t('choropleth.legend.fewer');
+  left.textContent = max > 0 ? '1' : '0';
   const right = document.createElement('span');
-  right.textContent = max > 0 ? `${t('choropleth.legend.more')} (max ${max})` : t('choropleth.legend.more');
+  right.textContent = max > 0 ? String(max) : '';
   labels.appendChild(left);
   labels.appendChild(right);
   wrap.appendChild(labels);
   return wrap;
 }
 
-// Local SVG helper, isolated so this module doesn't need to import from
-// charts.js (keeps the choropleth bundle independent for lazy loading).
 function svg(tag, attrs = {}, children = []) {
   const el = document.createElementNS(SVG_NS, tag);
   for (const [k, v] of Object.entries(attrs)) {

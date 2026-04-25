@@ -11,7 +11,7 @@ import { computeAllStats, computeClientTotal } from '../core/analyzer.js';
 import { buildRatiosSummary, ratioSectionTitle } from '../core/ratios_summary.js';
 import { icon, iconTile } from '../ui/icon.js';
 import { pieChart, hBarChart, vBarChart } from '../ui/charts.js';
-import { loadMunicipalities, municipalityChoropleth, resolveCountsByNis, choroplethLegend } from '../ui/choropleth.js';
+import { loadMunicipalities, municipalityChoropleth, resolveCountsByPostcode, choroplethLegend } from '../ui/choropleth.js';
 import { renderReport, printReport } from './report.js';
 import { exportClientTotalXlsx, downloadBlob, buildClientTotalFilename } from '../store/xlsx_export.js';
 import { reparseSnapshot } from '../core/reparse.js';
@@ -1350,17 +1350,17 @@ async function fillChoropleth(root, geo, ctx) {
   const host = root.querySelector('[data-choropleth-host]');
   if (!host) return;
   const data = await loadMunicipalities();
-  const { counts, mapped, total, unmapped } = resolveCountsByNis(geo.rows, data.byName);
+  const { counts, mapped, total, unmapped } = resolveCountsByPostcode(geo.rows, data.cpToCanonical);
   const lang = (ctx.locale === 'nl') ? 'nl' : 'fr';
-  const { svg: svgEl, max, thresholds } = municipalityChoropleth({
+  const { svg: svgEl, max } = municipalityChoropleth({
     data, counts, total, t, labelLang: lang,
   });
   host.replaceChildren();
   host.appendChild(svgEl);
-  host.appendChild(choroplethLegend({ thresholds, max, t }));
-  // Surface a small note when broker localités didn't match a NIS so the user
-  // knows the map is approximate. (Most exports name-match cleanly thanks to
-  // the diacritic+space-tolerant index.)
+  host.appendChild(choroplethLegend({ max, t }));
+  // Surface a small note when broker postcodes didn't resolve to a polygon so
+  // the user knows the map is approximate. (CPs outside Belgium, blanks, or
+  // historical CPs not present in the spatie reference table.)
   if (total > 0 && mapped < total) {
     const lostPct = ((total - mapped) / total * 100).toFixed(1);
     host.appendChild(h('div', { class: 'choropleth-note' },
