@@ -468,8 +468,8 @@
 
   "tutorial.title": "Tutorial",
   "tutorial.subtitle": "A tour of the features. Tap a section to expand it.",
-  "tutorial.overview.title": "What is Portefeuille for?",
-  "tutorial.overview.body": "Portefeuille analyses the Excel exports from your broker software (CLIENTS, POLICIES, INSURERS, CLAIMS) and gives you a clear picture of your book: composition, demographics, branches, data quality, cross-sell opportunities, evolution over time.\n\nAll analysis runs locally — no client data leaves your browser.",
+  "tutorial.overview.title": "What is Portfolio for?",
+  "tutorial.overview.body": "Portfolio analyses the Excel exports from your broker software (CLIENTS, POLICIES, INSURERS, CLAIMS) and gives you a clear picture of your book: composition, demographics, branches, data quality, cross-sell opportunities, evolution over time.\n\nAll analysis runs locally — no client data leaves your browser.",
   "tutorial.upload.title": "Import a snapshot",
   "tutorial.upload.body": "From the home screen tap 'New snapshot'. Pick the date (the extraction date, not today's), then select your Excel files.\n\nThe app auto-detects each file and drops it in the right slot (Clients / Policies / Insurers / Claims). CLIENTS is required; the others are optional but enrich the analysis.\n\nTap 'Confirm' to persist the snapshot.\n\nThe app keeps a copy of the original Excel files inside the database (and therefore inside the encrypted backup) so it can auto re-parse everything after a parser update.",
   "tutorial.dashboard.title": "Snapshot dashboard",

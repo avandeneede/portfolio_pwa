@@ -817,6 +817,16 @@ button { font-family: inherit; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Dashboard loading state. Centred spinner + label, occupies full content
+   area so the layout doesn't jump when the real dashboard mounts. */
+.dash-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px;
+  min-height: 60vh;
+}
+.dash-loading .spinner { width: 32px; height: 32px; border-width: 3px; }
+.dash-loading-label { color: var(--muted); font-size: 13px; }
+
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; padding: 0;
   margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0;

@@ -213,11 +213,12 @@ function page2(s, geo) {
     h('div', { class: 'rp-progress-track' }, [
       h('div', {
         class: 'rp-progress-fill rp-progress-zone',
-        style: `width:${zonePct}%;background:var(--indigo);`,
+        // Object-form style so CSP `style-src 'self'` doesn't drop it.
+        style: { width: `${zonePct}%`, background: 'var(--indigo)' },
       }, zonePct >= 12 ? formatPercent(zonePct, 1) : ''),
       h('div', {
         class: 'rp-progress-fill rp-progress-out',
-        style: `width:${horsZonePct}%;background:var(--pink);`,
+        style: { width: `${horsZonePct}%`, background: 'var(--pink)' },
       }, horsZonePct >= 12 ? formatPercent(horsZonePct, 1) : ''),
     ]),
     h('div', { class: 'rp-progress-legend' }, [
@@ -466,7 +467,17 @@ function page4(s, civil) {
 // that block outreach, or any field with >50% missing); orange = everything
 // else. The shared hex map below is still used to tint row backgrounds and
 // label text in the print tree (where we can't resolve CSS vars).
-const CRITICAL_CONTACT_KEYS = new Set(['email', 'telephone', 'phone']);
+// Tri-state DQ colouring (mirrors dashboard.dqColorVar).
+//   - phone/email: green if <5% missing
+//   - other fields: green if <10% missing, danger if >50% missing
+//   - everything else: warning
+function dqColorVar(field) {
+  const isContact = field.key === 'email' || field.key === 'telephone' || field.key === 'phone';
+  const greenCap = isContact ? 5 : 10;
+  if ((field.pct_missing || 0) < greenCap) return '--success';
+  if (!isContact && (field.pct_missing || 0) > 50) return '--danger';
+  return '--warning';
+}
 
 function hexFromVar(cssVar) {
   // We can't resolve CSS vars without the DOM. Instead, we rely on hard-coded
@@ -478,6 +489,7 @@ function hexFromVar(cssVar) {
     '--purple': '#5856d6',
     '--danger': '#ff3b30',
     '--warning': '#ff9500',
+    '--success': '#34c759',
     '--teal': '#5ac8fa',
     '--accent': '#007aff',
   };
@@ -487,25 +499,24 @@ function hexFromVar(cssVar) {
 function page5(s, dq) {
   const fields = (dq.fields || []).slice().sort((a, b) => b.pct_missing - a.pct_missing);
 
-  // Same rule as the dashboard: contact fields (email/phone) are always
-  // critical; everything else is only critical once it crosses the 50%
-  // missing threshold already flagged by the analyzer.
+  // Tri-state colouring mirrors the dashboard: green when missing-rate is
+  // below the field's tolerance band (5% for contacts, 10% otherwise),
+  // danger when a non-contact crosses 50%, warning everywhere else.
   const rowsWithColor = fields.map((f) => {
-    const isContact = CRITICAL_CONTACT_KEYS.has(f.key);
-    const critical = f.critical || isContact;
-    const color = critical ? '--danger' : '--warning';
-    return { ...f, color, critical };
+    const colorVar = dqColorVar(f);
+    return { ...f, color: colorVar, isDanger: colorVar === '--danger' };
   });
 
   const tableRows = rowsWithColor.map((f) => {
     const tint = hexFromVar(f.color);
     return {
-      // Soft row tint only on critical rows, so non-critical fields don't
-      // turn the whole table orange. Matches the dashboard's visual weight.
-      style: f.critical ? `background: ${tint}22;` : null,
+      // Soft row tint only on danger rows, so non-critical fields don't
+      // turn the whole table orange/red. Object-form style (CSP).
+      style: f.isDanger ? { background: tint + '22' } : null,
       cells: [
-        { text: f.label, align: 'left', style: `color: ${tint}; font-weight: 600;` },
-        { text: formatPercent(f.pct_missing, 2), align: 'right', style: f.critical ? `color: ${tint}; font-weight: 700;` : null },
+        { text: f.label, align: 'left', style: { color: tint, fontWeight: '600' } },
+        { text: formatPercent(f.pct_missing, 2), align: 'right',
+          style: f.isDanger ? { color: tint, fontWeight: '700' } : null },
       ],
     };
   });

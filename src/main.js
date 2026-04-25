@@ -24,6 +24,25 @@ function lazyScreen(importer, exportName) {
   let cached = null;
   return async (target, ctx, args) => {
     if (!cached) {
+      // Mount a spinner immediately so the click is acknowledged even when
+      // the import roundtrip takes >100ms (cold cache, slow connection).
+      // Once the screen is in the module cache subsequent navigations skip
+      // this branch entirely.
+      target.replaceChildren();
+      const ph = document.createElement('div');
+      ph.className = 'page';
+      const wrap = document.createElement('div');
+      wrap.className = 'dash-loading';
+      wrap.setAttribute('role', 'status');
+      const sp = document.createElement('div');
+      sp.className = 'spinner';
+      const lbl = document.createElement('div');
+      lbl.className = 'dash-loading-label';
+      lbl.textContent = t('common.loading') || 'Chargement…';
+      wrap.appendChild(sp);
+      wrap.appendChild(lbl);
+      ph.appendChild(wrap);
+      target.appendChild(ph);
       const mod = await importer();
       cached = mod[exportName];
     }

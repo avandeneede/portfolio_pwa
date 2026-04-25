@@ -116,13 +116,34 @@ function yearOf(dn) {
 }
 
 // Broker exports sometimes prefix the locality with a country code:
-// "B - BRUXELLES", "NL - AMSTERDAM", "LUX - LUXEMBOURG". Strip that so the
-// commune column reads cleanly. Keeps casing otherwise untouched.
+// "B - BRUXELLES", "NL - AMSTERDAM", "LUX - LUXEMBOURG". Strip that, then
+// title-case the rest so the same commune doesn't appear three different
+// ways across the table ("ENGHIEN", "Enghien", "enghien"). Multi-word names
+// keep their internal hyphens / apostrophes ("Braine-l'Alleud").
 function cleanCommune(s) {
   if (s == null) return '';
   const str = String(s).trim();
   if (!str) return '';
-  return str.replace(/^[A-Za-z]{1,3}\s*-\s*/, '').trim();
+  const stripped = str.replace(/^[A-Za-z]{1,3}\s*-\s*/, '').trim();
+  return titleCaseCommune(stripped);
+}
+
+// Title-case word-by-word, preserving the case after `'` and `-` so
+// "Braine-l'Alleud" doesn't become "Braine-L'alleud". Lowercases short
+// connecting words ("de", "la", "der", "des") when not at the start.
+const TC_LOWER_WORDS = new Set(['de', 'la', 'le', 'du', 'des', 'der', 'den', 'het', 'en', 'aan', 'op', 'sur', 'bij']);
+function titleCaseCommune(s) {
+  return s.toLowerCase().replace(/(^|[\s\-'])(\p{L})/gu, (_m, sep, ch, idx) => {
+    // Lower-case connectives unless they begin the string.
+    if (sep === ' ' && idx > 0) {
+      // Look ahead for the word boundary to peek at the rest of the token.
+      // Cheap heuristic: capitalise unless the next ~5 chars match a known
+      // small word. Idx points at `sep`; the matched letter is `ch`.
+      const rest = s.slice(idx + 1).toLowerCase().match(/^[\p{L}']+/u);
+      if (rest && TC_LOWER_WORDS.has(rest[0])) return sep + ch.toLowerCase();
+    }
+    return sep + ch.toUpperCase();
+  });
 }
 
 // Some rows were imported before the `date_de_naissance` header alias existed;

@@ -225,15 +225,19 @@ function wireCardSync(cardEl) {
 // Horizontal stacked progress bar: two coloured segments, auto-labelled when
 // each segment is wide enough to fit its own percentage.
 function dashProgressBar(inPct, outPct, inLabel, outLabel) {
+  // Object-form `style` is required: index.html ships `style-src 'self'` (no
+  // 'unsafe-inline'), so a string `style="..."` attribute would be silently
+  // dropped by the browser. The previous string-form left both segments
+  // unbacked → white text on white track → invisible labels and zero width.
   return h('div', { class: 'dash-progress' }, [
     h('div', { class: 'dash-progress-track' }, [
       h('div', {
         class: 'dash-progress-fill',
-        style: `width:${inPct}%;background:var(--indigo);`,
+        style: { width: `${inPct}%`, background: 'var(--indigo)' },
       }, inPct >= 12 ? formatPercent(inPct, 1) : ''),
       h('div', {
         class: 'dash-progress-fill',
-        style: `width:${outPct}%;background:var(--pink);`,
+        style: { width: `${outPct}%`, background: 'var(--pink)' },
       }, outPct >= 12 ? formatPercent(outPct, 1) : ''),
     ]),
     h('div', { class: 'dash-progress-legend' }, [
@@ -251,12 +255,17 @@ function dashProgressBar(inPct, outPct, inLabel, outLabel) {
 
 // Big-number summary card with a tinted header (like the print report boxes).
 function summaryBox(title, value, sub, tint, info) {
+  // Same CSP gotcha as dashProgressBar — object-form `style` so the tinted
+  // header actually paints. With the string form the browser drops the
+  // `style="background:var(--warning)"` attribute and we end up with the
+  // default white background under white text.
+  const headStyle = { background: `var(${tint})` };
   const head = info
-    ? h('div', { class: 'summary-box-head summary-box-head-row', style: `background:var(${tint});` }, [
+    ? h('div', { class: 'summary-box-head summary-box-head-row', style: headStyle }, [
         h('span', { class: 'summary-box-head-title' }, title),
         infoPopover(info),
       ])
-    : h('div', { class: 'summary-box-head', style: `background:var(${tint});` }, title);
+    : h('div', { class: 'summary-box-head', style: headStyle }, title);
   return h('div', { class: 'summary-box' }, [
     head,
     h('div', { class: 'summary-box-value' }, value),
@@ -264,8 +273,21 @@ function summaryBox(title, value, sub, tint, info) {
   ]);
 }
 
-// Contact fields that are always considered critical (needed for outreach).
-const CRITICAL_CONTACT_KEYS = new Set(['email', 'telephone']);
+// Tri-state colour for a data-quality field. Phone & email are stricter
+// (they directly gate outreach campaigns), so anything ≥5% missing is no
+// longer green; everything else gets a 10% green band.
+//   - <green threshold        → --success
+//   - non-contact >50%         → --danger
+//   - everything in between    → --warning
+// Note: contact fields no longer get a "critical" badge — the tinted bar
+// already communicates urgency, the badge was visual noise.
+function dqColorVar(field) {
+  const isContact = field.key === 'email' || field.key === 'telephone';
+  const greenCap = isContact ? 5 : 10;
+  if ((field.pct_missing || 0) < greenCap) return '--success';
+  if (!isContact && (field.pct_missing || 0) > 50) return '--danger';
+  return '--warning';
+}
 
 // IARD = every branch except these three "non-IARD" codes. The pie on the
 // insurance section aggregates them as Total IARD / Vie / Placement / Crédit.
@@ -275,18 +297,25 @@ const NON_IARD = new Set(['VIE', 'PLA', 'CRED']);
 // Main
 // -----------------------------------------------------------------------------
 
-export function renderDashboard(root, ctx, args) {
+export async function renderDashboard(root, ctx, args) {
   const { snapshotId } = args;
 
-  // Loading placeholder first — ensures rapid visual feedback.
+  // Loading placeholder first. Two reasons:
+  //   1. Visual feedback the click registered, so the user doesn't double-tap.
+  //   2. Buys a paint before the synchronous analyzer pipeline blocks the
+  //      main thread for 50–500ms on larger portfolios. Without the rAF
+  //      yield below, the browser would never paint this placeholder.
   mount(root, h('div', { class: 'page dash' }, [
-    h('div', { class: 'dash-hero' }, [
-      h('div', { class: 'dash-hero-main' }, [
-        h('div', { class: 'dash-hero-eyebrow' }, t('common.loading')),
-        h('h1', { class: 'dash-hero-title' }, '…'),
-      ]),
+    h('div', { class: 'dash-loading', role: 'status', 'aria-live': 'polite' }, [
+      h('div', { class: 'spinner' }),
+      h('div', { class: 'dash-loading-label' }, t('common.loading') || 'Chargement…'),
     ]),
   ]));
+
+  // Yield two rAFs so the browser commits the placeholder paint before we
+  // start the synchronous compute. One rAF schedules the render; two
+  // guarantees we're past the layout/paint cycle.
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null))));
 
   const snapshot = ctx.db.getSnapshot(snapshotId);
   if (!snapshot) {
@@ -897,30 +926,20 @@ export function renderDashboard(root, ctx, args) {
   // ---- Section 3: Data quality --------------------------------------------
 
   const dqFields = stats.data_quality.fields;
-  // Contact fields are always critical; others only when >50% missing.
+  // Three-state colouring per field: green (low missing), warning, or danger.
+  // Phone & email use a 5% green cap; everything else 10%. No more "critical"
+  // badge — the bar tint is the signal.
   const dqDisplay = dqFields.map((f) => ({
     ...f,
-    critical: f.critical || CRITICAL_CONTACT_KEYS.has(f.key),
+    colorVar: dqColorVar(f),
   }));
-  // Build a label with an optional "critical" badge (red triangle) for fields
-  // where the missing data actively hurts outreach (email + phone).
-  const dqLabelCell = (f) => {
-    const fieldTint = f.critical ? '--danger' : '--warning';
-    const children = [
-      h('span', { class: 'cell-with-icon' }, [
-        h('span', { class: 'cell-icon-dot', style: { '--tint': `var(${fieldTint})` } },
-          icon(dqFieldIcon(f.key), { size: 14, color: fieldTint })),
-        h('span', {}, f.label),
-      ]),
-    ];
-    if (CRITICAL_CONTACT_KEYS.has(f.key)) {
-      children.push(h('span', { class: 'dq-badge', title: t('dash.s3_critical') || 'Critical' }, [
-        icon('exclamationmark.triangle', { size: 12, color: '--danger' }),
-        h('span', {}, t('dash.s3_critical') || 'Critique'),
-      ]));
-    }
-    return h('span', { class: 'dq-label-cell' }, children);
-  };
+  const dqLabelCell = (f) => h('span', { class: 'dq-label-cell' }, [
+    h('span', { class: 'cell-with-icon' }, [
+      h('span', { class: 'cell-icon-dot', style: { '--tint': `var(${f.colorVar})` } },
+        icon(dqFieldIcon(f.key), { size: 14, color: f.colorVar })),
+      h('span', {}, f.label),
+    ]),
+  ]);
   const sec3 = section({
     number: 3, title: t('report.s4_dq'),
     tint: '--warning', iconName: 'shield.checkmark',
@@ -938,7 +957,11 @@ export function renderDashboard(root, ctx, args) {
               {
                 text: formatPercent(f.pct_missing, 1),
                 align: 'right',
-                style: f.critical ? 'color:var(--danger);font-weight:600;' : null,
+                // Object-form style (CSP). Tint matches the bar so a glance
+                // across the row reads consistently.
+                style: f.colorVar === '--danger'
+                  ? { color: 'var(--danger)', fontWeight: '600' }
+                  : null,
               },
             ],
           }))
@@ -948,7 +971,7 @@ export function renderDashboard(root, ctx, args) {
             label: f.label,
             value: f.pct_missing,
             valueLabel: formatPercent(f.pct_missing, 1),
-            color: f.critical ? '--danger' : '--warning',
+            color: f.colorVar,
             key: `dq:${f.key}`,
           })), { width: 400, rowHeight: 24, gap: 6, labelWidth: 130, valueWidth: 50, max: 100 })
         ),
