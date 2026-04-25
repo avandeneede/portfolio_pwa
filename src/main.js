@@ -11,6 +11,7 @@ import { askPassphraseModal } from './ui/passphrase_modal.js';
 import { toast } from './ui/toast.js';
 import { renderShell, refreshSidebar, getContentRoot } from './ui/shell.js';
 import { ensureIconSprite } from './ui/icon.js';
+import { installGlobalErrorHandlers, logError } from './store/error_log.js';
 // Home is the landing screen + the target of every fallback redirect.
 // Keep it eager so the boot path doesn't pay an extra round-trip for it.
 import { renderHome } from './screens/home.js';
@@ -192,6 +193,11 @@ function setBootStage(label) {
 }
 
 async function bootstrap() {
+  // Wire global error handlers as the very first thing so any failure during
+  // boot (sprite fetch, sql.js init, locale load) gets persisted to the local
+  // error log. Idempotent — safe even if main.js is re-imported by HMR.
+  installGlobalErrorHandlers();
+
   // Inject the FA7 sprite into <body> before any UI renders. Icons are rendered
   // via <use href="#alias"/> so they need the sprite to be in the DOM. Fire and
   // forget — UI that mounts before this resolves will simply paint blank icons
@@ -300,6 +306,9 @@ function render(renderer, args = {}) {
   const target = getContentRoot();
   if (!target) return;
   ctx.lastRender = { renderer, args };
+  // Capture the renderer name so the error log can point at *which* screen
+  // blew up, not just "render error".
+  const where = renderer && renderer.name ? `render:${renderer.name}` : 'render';
   try {
     const result = renderer(target, ctx, args);
     // Lazy screens return a promise. Catch async errors symmetrically with
@@ -307,11 +316,13 @@ function render(renderer, args = {}) {
     if (result && typeof result.then === 'function') {
       result.catch((e) => {
         console.error(e);
+        logError({ kind: where, message: e?.message || String(e), stack: e?.stack });
         toast(t('error.generic') + ' ' + e.message, 'danger');
       });
     }
   } catch (e) {
     console.error(e);
+    logError({ kind: where, message: e?.message || String(e), stack: e?.stack });
     toast(t('error.generic') + ' ' + e.message, 'danger');
   }
 }
@@ -322,6 +333,9 @@ ctx.currentPath = currentPath;
 
 bootstrap().catch((e) => {
   console.error(e);
+  // Persist the boot failure too — most opaque "white screen of death"
+  // reports come from this exact path.
+  logError({ kind: 'bootstrap', message: e?.message || String(e), stack: e?.stack });
   root.textContent = 'Failed to start: ' + e.message;
 });
 

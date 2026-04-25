@@ -19,6 +19,10 @@ import { h } from './dom.js';
 import { t } from '../i18n/index.js';
 import { icon } from './icon.js';
 
+/**
+ * @param {{ mode?: 'get'|'set', title?: string, message?: string }} [opts]
+ * @returns {Promise<string|null>}
+ */
 export function askPassphraseModal({ mode = 'get', title, message } = {}) {
   return new Promise((resolve) => {
     // Stable id so the dialog labels itself via aria-labelledby. Suffix
@@ -114,7 +118,7 @@ export function askPassphraseModal({ mode = 'get', title, message } = {}) {
 
     // Save the previously focused element so we can restore focus on close —
     // standard a11y pattern for modal dialogs.
-    const previouslyFocused = document.activeElement;
+    const previouslyFocused = /** @type {HTMLElement|null} */ (document.activeElement);
 
     function close(value) {
       document.removeEventListener('keydown', onKey);
@@ -132,10 +136,10 @@ export function askPassphraseModal({ mode = 'get', title, message } = {}) {
     // on each Tab keypress because confirmInput may not exist (mode === 'get'),
     // and disabled state can change.
     function focusables() {
-      return Array.from(form.querySelectorAll(
+      return /** @type {HTMLElement[]} */ (Array.from(form.querySelectorAll(
         'input:not([type=hidden]):not([disabled]):not([tabindex="-1"]),' +
         'button:not([disabled]),[href],[tabindex]:not([tabindex="-1"])'
-      ));
+      )));
     }
 
     function onKey(e) {

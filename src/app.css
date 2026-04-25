@@ -485,6 +485,35 @@ button { font-family: inherit; }
 }
 .row.critical .row-value { color: var(--danger); font-weight: 600; }
 
+/* Error log panel: monospace, scrollable, capped height. Each entry has a
+   muted meta line (when/kind/version), a message, and an optional stack. */
+.error-log-list {
+  max-height: 320px; overflow-y: auto;
+  padding: 0 16px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.error-log-list:empty { display: none; }
+.error-log-entry {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--separator);
+}
+.error-log-entry:last-child { border-bottom: none; }
+.error-log-meta { color: var(--muted); font-size: 10.5px; margin-bottom: 2px; }
+.error-log-msg { color: var(--text-1); white-space: pre-wrap; word-break: break-word; }
+.error-log-stack {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: var(--bg-2);
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 10.5px;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 140px; overflow-y: auto;
+}
+.error-log-more { padding: 6px 0; color: var(--muted); font-size: 11px; }
+
 /* Bar-in-row visual (branches, companies, age brackets) */
 .bar-track {
   height: 4px; background: var(--fill);

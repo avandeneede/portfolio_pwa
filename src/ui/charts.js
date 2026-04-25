@@ -5,6 +5,11 @@
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+/**
+ * @param {string} tag
+ * @param {Object.<string, any>} [attrs]
+ * @param {any} [children] Node, string, number, falsy, or an array of those.
+ */
 function svg(tag, attrs = {}, children = []) {
   const el = document.createElementNS(SVG_NS, tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -453,8 +458,8 @@ export function lineChart(points, opts = {}) {
     if (tx < 2) tx = 2;
     if (tx + tipW > width - 2) tx = width - tipW - 2;
     if (ty < 2) ty = y + 14;
-    tipFo.setAttribute('x', tx);
-    tipFo.setAttribute('y', ty);
+    tipFo.setAttribute('x', String(tx));
+    tipFo.setAttribute('y', String(ty));
     tipFo.style.display = '';
   }
   function hideTip() {

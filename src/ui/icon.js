@@ -66,7 +66,13 @@ function resolveColor(c) {
   return c;
 }
 
-// Create an inline SVG icon that references a symbol from the sprite.
+/**
+ * Create an inline SVG icon that references a symbol from the sprite.
+ *
+ * @param {string} name
+ * @param {{ size?: number, color?: string, className?: string }} [opts]
+ * @returns {SVGSVGElement}
+ */
 export function icon(name, { size = 20, color, className } = {}) {
   // If the sprite is loaded and the name isn't there, fall back so we
   // never render a blank box. Before the sprite finishes loading,

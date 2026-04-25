@@ -1,5 +1,41 @@
 // Tiny DOM helpers. No framework. Never innerHTML for user data (CSP/XSS).
 
+/**
+ * A child accepted by `h(...)`, `mount(...)`, and friends. We accept anything
+ * we can usefully turn into DOM:
+ *   - a Node (appended directly),
+ *   - a string/number (wrapped in a TextNode),
+ *   - null/undefined/false (skipped — useful for inline ternaries),
+ *   - or a (possibly nested) array of any of the above.
+ *
+ * Self-recursive arrays are typed via the `ChildArray` interface trick because
+ * TS rejects direct typedef self-reference inside a union.
+ *
+ * @typedef {Node | string | number | boolean | null | undefined | ChildArray} Children
+ */
+/** @typedef {Children[]} ChildArray */
+
+/**
+ * @typedef {Object.<string, any>} HProps
+ *   Property bag for `h()`. Reserved keys: `class`, `dataset`, `style`,
+ *   `html` (rejected), and any `on*` event handler. Everything else is
+ *   forwarded to setAttribute.
+ */
+
+/**
+ * Build an Element. Children may be strings, numbers, Nodes, falsy values
+ * (skipped), or nested arrays — recursive flattening is intentional so call
+ * sites can do `h('div', {}, [a, [b, c], d])` without thinking about it.
+ *
+ * Throws on `html:` props as a CSP/XSS guard — every styling and content
+ * path goes through CSSOM setters and TextNodes.
+ *
+ * @template {keyof HTMLElementTagNameMap} K
+ * @param {K} tag
+ * @param {HProps} [props]
+ * @param {Children} [children]
+ * @returns {HTMLElementTagNameMap[K]}
+ */
 export function h(tag, props = {}, children = []) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
@@ -19,16 +55,24 @@ export function h(tag, props = {}, children = []) {
 // setters (and setProperty for CSS custom properties) keeps this CSP-clean
 // under `style-src 'self'` — the parsed `style=""` attribute path is what
 // 'unsafe-inline' guards, and we never go through that.
+/**
+ * @param {HTMLElement} el
+ * @param {Object.<string, any>} styles
+ */
 function applyStyle(el, styles) {
   for (const [k, v] of Object.entries(styles)) {
     if (v == null || v === false) continue;
     if (k.startsWith('--')) el.style.setProperty(k, String(v));
-    else el.style[k] = v;
+    else /** @type {any} */ (el.style)[k] = v;
   }
 }
 
+/**
+ * @param {Node} parent
+ * @param {Children} children
+ */
 function appendChildren(parent, children) {
-  if (children == null || children === false) return;
+  if (children == null || children === false || children === true) return;
   if (Array.isArray(children)) {
     for (const c of children) appendChildren(parent, c);
     return;
@@ -37,14 +81,29 @@ function appendChildren(parent, children) {
   else parent.appendChild(document.createTextNode(String(children)));
 }
 
+/**
+ * @param {Element} el
+ */
 export function clear(el) {
   while (el.firstChild) el.removeChild(el.firstChild);
 }
 
+/**
+ * Replace `container`'s children with `nodes`. Falsy entries are skipped;
+ * non-Node entries are wrapped in TextNodes.
+ *
+ * @param {Element} container
+ * @param {...Children} nodes
+ */
 export function mount(container, ...nodes) {
   clear(container);
   for (const n of nodes) {
-    if (n != null && n !== false) container.appendChild(n instanceof Node ? n : document.createTextNode(String(n)));
+    if (n == null || n === false || n === true) continue;
+    if (Array.isArray(n)) {
+      appendChildren(container, n);
+      continue;
+    }
+    container.appendChild(n instanceof Node ? n : document.createTextNode(String(n)));
   }
 }
 
@@ -54,6 +113,9 @@ export function mount(container, ...nodes) {
 // toggle here gives us two guarantees brokers asked for:
 //   1. Opening a new popover closes any other open popover (single-open).
 //   2. A global outside-click handler closes whatever is open.
+/**
+ * @param {Element} triggerBtn
+ */
 export function togglePopover(triggerBtn) {
   const pop = triggerBtn.nextElementSibling;
   if (!pop || !pop.classList.contains('card-info-popover')) return;
@@ -74,13 +136,13 @@ export function installPopoverOutsideClick() {
   document.addEventListener('click', (e) => {
     const open = document.querySelectorAll('.card-info-popover.is-open');
     if (!open.length) return;
-    const target = e.target;
+    const target = /** @type {Node|null} */ (e.target);
     for (const p of open) {
       // Click inside the popover itself: leave it alone.
-      if (p.contains(target)) continue;
+      if (target && p.contains(target)) continue;
       // Click on the trigger button (the popover's previous sibling): the
       // button's own onclick handles toggling; don't double-close here.
-      if (p.previousElementSibling && p.previousElementSibling.contains(target)) continue;
+      if (target && p.previousElementSibling && p.previousElementSibling.contains(target)) continue;
       p.classList.remove('is-open');
     }
   });

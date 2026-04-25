@@ -31,6 +31,13 @@ function normalizeOpts(arg2, arg3) {
   return { kind: arg2 || 'info', durationMs: arg3 ?? 4000, action: null };
 }
 
+/**
+ * @typedef {{ kind?: string, duration?: number, durationMs?: number, action?: { label?: string, onClick: () => any }|null }} ToastOpts
+ *
+ * @param {string} message
+ * @param {string|ToastOpts} [arg2] kind string ("info"/"danger"/...) or full opts object
+ * @param {number} [arg3] legacy duration when arg2 is a kind string
+ */
 export function toast(message, arg2 = 'info', arg3 = 4000) {
   const { kind, durationMs, action } = normalizeOpts(arg2, arg3);
   const host = getHost();

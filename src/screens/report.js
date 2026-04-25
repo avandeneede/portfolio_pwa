@@ -55,6 +55,12 @@ function infoText(text) {
   return h('p', { class: 'rp-info' }, text);
 }
 
+/**
+ * Render a report table. Row shapes are flexible (multiple variants used across
+ * the report sections) so the parameter is intentionally typed loosely here.
+ * @param {any[]} rows
+ * @param {{ head?: any[], tone?: string }} [opts]
+ */
 function table(rows, opts = {}) {
   const cls = 'rp-table' + (opts.tone ? ` tone-${opts.tone}` : '');
   // cellClass: joins alignment + "is-current" so the ratios-summary table can
@@ -547,6 +553,7 @@ function page6(s, branches) {
     { text: formatPercent(b.pct, 2), align: 'right' },
   ] }));
 
+  /** @type {any[]} */
   const groupRows = [
     { emphasize: true, cells: [t('report.total_iard'),
       { text: formatInt(iardCount), align: 'right' },
@@ -632,6 +639,7 @@ function page7(s, sub, total_clients) {
 
 function page8(s, ppc, monoByBranch) {
   const dist = distributionRows(ppc.distribution || []);
+  /** @type {any[]} */
   const distRows = dist.rows.map((r) => ({ cells: [
     r.label,
     { text: formatInt(r.count), align: 'right' },

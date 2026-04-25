@@ -339,12 +339,13 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
         : null;
 
       const delta = computeDelta(v, prev, direction, isPercentRow, ctx.locale);
-      const valueNode = (v.pct != null)
+      const vAny = /** @type {{value: any, pct?: any}} */ (v);
+      const valueNode = (vAny.pct != null)
         ? h('span', { class: 'rp-val-pct' }, [
-            h('span', { class: 'rp-val' }, v.value),
-            h('span', { class: 'rp-pct' }, v.pct),
+            h('span', { class: 'rp-val' }, vAny.value),
+            h('span', { class: 'rp-pct' }, vAny.pct),
           ])
-        : v.value;
+        : vAny.value;
 
       return h('td', {
         class: col.isCurrent ? 'a-right is-current-col' : 'a-right',

@@ -32,22 +32,16 @@
     "types": []
   },
   "//include": [
-    "Type-check the numeric core, the storage layer, and the parser — the",
-    "parts where a wrong type means a wrong number for a broker or lost",
-    "data. UI screens are not yet JSDocced enough for tsc to be useful (the",
-    "narrow inference from dom.js helpers produces noise, not signal).",
-    "Adding screens incrementally is fine; do it by JSDoccing src/ui/dom.js",
-    "first so the inference is broad enough to type-check downstream callers.",
+    "Type-check the whole client-side codebase. dom.js is JSDocced so the",
+    "h()/mount()/clear() helpers infer broadly enough that downstream",
+    "screens type-check without per-call-site casts.",
     "",
     "tests/ and tools/ live in node-land and would need @types/node to type-",
     "check, which means a package.json — explicitly avoided by this project.",
     "They're small (<500 LoC) and exercise themselves at runtime via CI."
   ],
   "include": [
-    "src/core/**/*.js",
-    "src/store/**/*.js",
-    "src/ingest/**/*.js",
-    "src/version.js"
+    "src/**/*.js"
   ],
   "exclude": [
     "vendor/**",

@@ -14,6 +14,7 @@ import {
 import { icon, iconTile } from '../ui/icon.js';
 import { askPassphraseModal } from '../ui/passphrase_modal.js';
 import { reparseAllSnapshots } from '../core/reparse.js';
+import { listErrors, clearErrors, formatEntry } from '../store/error_log.js';
 
 // Ask the user to set a new passphrase (with confirmation). Returns the
 // passphrase or null if cancelled. The modal uses a real <form> with
@@ -168,8 +169,9 @@ export function renderSettings(root, ctx) {
       const suggested = latest
         ? buildFilename(latest.label, new Date(latest.snapshot_date))
         : buildFilename('portefeuille');
+      // showSaveFilePicker is Chromium-only; not in lib.dom yet, hence the cast.
       // eslint-disable-next-line no-undef
-      const handle = await window.showSaveFilePicker({
+      const handle = await /** @type {any} */ (window).showSaveFilePicker({
         suggestedName: suggested,
         types: [{
           description: 'Portefeuille backup',
@@ -337,6 +339,83 @@ export function renderSettings(root, ctx) {
       state.busy = false;
     }
   }
+
+  // ---- Diagnostics: local error log --------------------------------------
+  //
+  // Errors are persisted by src/store/error_log.js (own IndexedDB). The panel
+  // shows a count + a collapsible list, plus copy/clear actions. The list is
+  // populated asynchronously so the rest of the page renders without
+  // blocking on IndexedDB.
+
+  /** @type {Array<any>} */
+  let errorRows = [];
+
+  async function loadErrorRows() {
+    errorRows = await listErrors();
+    const countEl = root.querySelector('[data-error-count]');
+    if (countEl) {
+      countEl.textContent = errorRows.length === 0
+        ? t('settings.diagnostics.errors_empty')
+        : `${errorRows.length} ${t('settings.diagnostics.errors_count')}`;
+    }
+    const listEl = root.querySelector('[data-error-list]');
+    if (listEl) renderErrorList(listEl);
+  }
+
+  function renderErrorList(listEl) {
+    while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+    if (errorRows.length === 0) return;
+    // Cap on-screen rows at 25 to keep the panel responsive; the copy-all
+    // action still grabs the full set from `errorRows`.
+    for (const row of errorRows.slice(0, 25)) {
+      const when = new Date(row.ts).toLocaleString();
+      const node = h('div', { class: 'error-log-entry' }, [
+        h('div', { class: 'error-log-meta' },
+          `${when} · ${row.kind} · v${row.version}${row.route ? ' · ' + row.route : ''}`),
+        h('div', { class: 'error-log-msg' }, row.message),
+        row.stack ? h('pre', { class: 'error-log-stack' }, row.stack) : null,
+      ]);
+      listEl.appendChild(node);
+    }
+    if (errorRows.length > 25) {
+      listEl.appendChild(h('div', { class: 'error-log-more' },
+        `+ ${errorRows.length - 25}…`));
+    }
+  }
+
+  async function handleCopyErrors() {
+    if (errorRows.length === 0) return;
+    const text = errorRows.map(formatEntry).join('\n\n---\n\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(t('settings.diagnostics.copied'), 'success');
+    } catch (e) {
+      // clipboard.writeText can reject under permission policies (e.g. file://
+      // origins, no transient activation). Fall back to a textarea + execCommand
+      // copy so the user still gets the log out.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); toast(t('settings.diagnostics.copied'), 'success'); }
+      catch (_) { toast(t('error.generic') + ' ' + e.message, 'danger'); }
+      finally { ta.remove(); }
+    }
+  }
+
+  async function handleClearErrors() {
+    if (!window.confirm(t('settings.diagnostics.clear_confirm'))) return;
+    await clearErrors();
+    errorRows = [];
+    toast(t('settings.diagnostics.cleared'), 'success');
+    await loadErrorRows();
+  }
+
+  // Kick off the async load. If the user is fast, the panel renders empty
+  // first then fills in.
+  loadErrorRows().catch(() => {});
 
   // ---- Profile helpers ----------------------------------------------------
 
@@ -645,6 +724,34 @@ export function renderSettings(root, ctx) {
         h('div', { class: 'row-main' }, [
           h('div', { class: 'row-title' }, t('settings.update.reparse_all')),
           h('div', { class: 'row-sub' }, t('settings.update.reparse_all_hint')),
+        ]),
+        h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
+      ]),
+    ]),
+
+    h('div', { class: 'section-head' }, h('span', {}, t('settings.diagnostics.title'))),
+    h('div', { class: 'group' }, [
+      h('div', { class: 'row' }, [
+        iconTile('exclamationmark.triangle', '--warning'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.diagnostics.errors')),
+          h('div', { class: 'row-sub' }, t('settings.diagnostics.errors_hint')),
+        ]),
+        h('div', { class: 'row-value', 'data-error-count': '' },
+          t('settings.diagnostics.errors_empty')),
+      ]),
+      h('div', { class: 'error-log-list', 'data-error-list': '' }),
+      h('div', { class: 'row interactive', onClick: handleCopyErrors }, [
+        iconTile('doc.on.doc', '--accent'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.diagnostics.copy')),
+        ]),
+        h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
+      ]),
+      h('div', { class: 'row interactive', onClick: handleClearErrors }, [
+        iconTile('trash', '--muted'),
+        h('div', { class: 'row-main' }, [
+          h('div', { class: 'row-title' }, t('settings.diagnostics.clear')),
         ]),
         h('div', { class: 'row-chevron' }, icon('chevron.right', { size: 18, color: '--text-tertiary' })),
       ]),

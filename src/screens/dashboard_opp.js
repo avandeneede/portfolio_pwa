@@ -116,7 +116,7 @@ export function showOppDetail(title, items, renderer, opts = {}) {
   if (!items || items.length === 0) return;
   // Save current focus so we can restore it on close — keyboard users return
   // exactly where they were before the modal stole focus.
-  const previouslyFocused = document.activeElement;
+  const previouslyFocused = /** @type {HTMLElement|null} */ (document.activeElement);
   const close = () => {
     overlay.remove();
     document.removeEventListener('keydown', onKey);
@@ -130,9 +130,9 @@ export function showOppDetail(title, items, renderer, opts = {}) {
     // Focus trap so Tab cycles inside the modal instead of escaping into the
     // dashboard underneath.
     if (e.key === 'Tab') {
-      const focusable = Array.from(overlay.querySelectorAll(
+      const focusable = /** @type {HTMLElement[]} */ (Array.from(overlay.querySelectorAll(
         'a[href],button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])'
-      ));
+      )));
       if (focusable.length === 0) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
