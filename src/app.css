@@ -2408,11 +2408,21 @@ button { font-family: inherit; }
    inside a standalone PWA, so editable fields end up trapping the user at
    200%. Force ≥16px for form fields on iOS only — desktop typography is
    left untouched. The `@supports (-webkit-touch-callout: none)` query
-   matches Safari/WebKit (iOS + iPadOS) and not Chrome/Firefox/Edge. */
+   matches Safari/WebKit (iOS + iPadOS) and not Chrome/Firefox/Edge.
+   We list every offending class explicitly because `.profile-input` (0,1,0)
+   and `.date-eu` (0,1,0) outrank a bare `input` selector (0,0,1) — equal
+   specificity + later source order is what makes this rule actually win. */
 @supports (-webkit-touch-callout: none) {
   input,
   textarea,
-  select {
+  select,
+  .profile-input,
+  .date-eu,
+  .form-row input.date-eu,
+  .form-row input[type="date"],
+  .form-row input[type="text"],
+  .form-row input[type="password"],
+  .form-row input[type="file"] {
     font-size: 16px;
   }
 }
