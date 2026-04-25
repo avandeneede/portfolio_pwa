@@ -1215,7 +1215,7 @@ button { font-family: inherit; }
 }
 .summary-box-head {
   display: flex; align-items: center;
-  min-height: 34px;
+  min-height: 40px;
   color: #fff;
   padding: 8px 14px;
   font-size: 12px; font-weight: 600;
@@ -2290,6 +2290,16 @@ button { font-family: inherit; }
 @media (max-width: 820px) {
   button, .side-nav-item, .side-cta, .side-snapshot {
     min-height: 44px;
+  }
+  /* Inline/icon buttons opt out of the 44px floor: they live inside dense
+   * rows (table cells, card heads, map overlays) where bumping every
+   * <button> to 44px stretches the surrounding container. The (i) info
+   * trigger, the "Action corrective ?" CTA, and the choropleth zoom
+   * controls already have generous tap padding for their visual size. */
+  .card-info-btn,
+  .ratio-action-cta,
+  .choropleth-ctl {
+    min-height: 0;
   }
   /* Prevent iOS from auto-zooming into inputs with <16px text. */
   input, select, textarea { font-size: 16px; }
