@@ -331,9 +331,35 @@ export function renderSettings(root, ctx) {
         const regs = await navigator.serviceWorker.getRegistrations();
         await Promise.all(regs.map((r) => r.unregister()));
       }
+      // Force-revalidate the critical entry points. The SW being gone is
+      // not enough: GitHub Pages serves these with `Cache-Control: max-age=600`
+      // by default, so the browser's HTTP disk cache can still hand back
+      // stale bytes for up to 10 minutes after a deploy. `cache: 'reload'`
+      // forces a network round-trip and refreshes the cache entry.
+      const critical = [
+        './',
+        './index.html',
+        './src/main.js',
+        './src/version.js',
+        './src/app.css',
+        './sw.js',
+      ];
+      await Promise.all(critical.map((u) =>
+        fetch(u, { cache: 'reload' }).catch(() => {})
+      ));
       toast(t('settings.update.reloading'), 'success');
-      // Short delay so the toast paints before the reload blanks the page.
-      setTimeout(() => window.location.reload(), 400);
+      // Two reasons we don't just call location.reload():
+      //   1. unregister() returns once the registration is gone, but the
+      //      active SW continues to control the current page until it
+      //      navigates. A plain reload can still get intercepted.
+      //   2. Even with no SW, the browser's HTTP disk cache can hand back
+      //      a stale main.js / app.css. Adding a query string busts the
+      //      cache key for index.html, and we strip it back off via
+      //      replaceState so the URL bar stays clean afterwards.
+      const bust = `?v=${Date.now()}`;
+      const target = location.pathname + bust + (location.hash || '');
+      // Short delay so the toast paints before the navigation blanks the page.
+      setTimeout(() => location.replace(target), 400);
     } catch (e) {
       console.error(e);
       toast(t('error.generic') + ' ' + e.message, 'danger');
