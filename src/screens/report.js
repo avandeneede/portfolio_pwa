@@ -698,7 +698,7 @@ function page10(s, stats, ratioSeries, locale) {
 
   const leftRows = rows.map((r) => ({
     cells: [
-      r.label,
+      r.year ? `${r.label} · ${r.year}` : r.label,
       ...r.values.map((v, i) => ({
         text: v.pct != null
           ? ratioValueWithPct(v.rawValue, v.rawPct)

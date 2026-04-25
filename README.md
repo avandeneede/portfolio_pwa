@@ -10,6 +10,7 @@ Forked in spirit from `avandeneede/insurance_portfolio_analysis` (Flask + SQLite
 - **Encrypted cloud backups.** Optional. AES-GCM + PBKDF2 (600k) over a user passphrase. Drop the blob in iCloud Drive / Google Drive / Dropbox — the service only sees ciphertext.
 - **Source-of-truth Excel files.** The original XLSX bytes are stored alongside parsed rows so the app can re-derive every snapshot from source after a parser change. Auto-fires on every app update — no re-uploads.
 - **Lightweight.** No framework. Vanilla JS + small vendored libs (sql.js, SheetJS, Chart.js, pdfmake).
+- **Coaching, not just charts.** The Evolution page's ratios summary carries a per-row coaching card (ⓘ): summary, what an up/down move means, and one concrete corrective action.
 - **Responsive.** Desktop and mobile. Breakdown's primitives: `.wrap`, `.hero`, `.group`, `.row`, `.sheet`, `.segmented`, CSS vars for light/dark.
 - **Installable.** manifest.json + service worker. Works offline after first load.
 

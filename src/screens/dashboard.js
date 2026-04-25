@@ -655,8 +655,8 @@ export function renderDashboard(root, ctx, args) {
   const knownSexe = (M.count || 0) + (F.count || 0);
   const totalSexe = knownSexe + (Uk.count || 0);
   const genderSegments = [
-    { label: `${t('report.gender_male_symbol')} ${t('demo.male')}`, value: M.count, color: '--indigo' },
-    { label: `${t('report.gender_female_symbol')} ${t('demo.female')}`, value: F.count, color: '--pink' },
+    { label: t('demo.male'), value: M.count, color: '--indigo' },
+    { label: t('demo.female'), value: F.count, color: '--pink' },
   ];
 
   // Age table totals + rows.
@@ -799,14 +799,12 @@ export function renderDashboard(root, ctx, args) {
             [
               {
                 key: 'sex:M',
-                cells: [rowIcon('person.crop.circle', '--indigo',
-                  `${t('report.gender_male_symbol')} ${t('demo.male')}`),
+                cells: [rowIcon('person.crop.circle', '--indigo', t('demo.male')),
                   formatInt(M.count), formatPercent(M.pct, 1)],
               },
               {
                 key: 'sex:F',
-                cells: [rowIcon('person.crop.circle', '--pink',
-                  `${t('report.gender_female_symbol')} ${t('demo.female')}`),
+                cells: [rowIcon('person.crop.circle', '--pink', t('demo.female')),
                   formatInt(F.count), formatPercent(F.pct, 1)],
               },
               {
@@ -1211,7 +1209,12 @@ export function renderDashboard(root, ctx, args) {
         ratioRows.map((r) => ({
           key: `ratio:${r.key}`,
           cells: [
-            r.label,
+            r.year
+              ? h('span', { class: 'ratio-row-text' }, [
+                  r.label,
+                  h('span', { class: 'ratio-row-year' }, ` · ${r.year}`),
+                ])
+              : r.label,
             ...r.values.map((v, i) => ratioValueCell(v, ratioColumns[i]?.isCurrent)),
           ],
         }))

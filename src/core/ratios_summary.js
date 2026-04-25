@@ -118,18 +118,19 @@ function computeValuesFor(stats) {
     pct_bi: { value: formatPercent(pct_bi, 2), rawValue: pct_bi },
     pct_5plus: { value: formatPercent(pct_5plus, 2), rawValue: pct_5plus },
     total_policies: { value: formatInt(kpi.total_polices), rawValue: kpi.total_polices || 0 },
+    // Split into count + pct rows: showing both numbers in a single cell read
+    // as "two values" and confused brokers. Each metric now has its own row,
+    // matching the layout used for the rest of the table.
     polices_p: {
       value: formatInt(kpi.polices_particuliers || 0),
-      pct: formatPercent(pct_polices_p, 2),
       rawValue: kpi.polices_particuliers || 0,
-      rawPct: pct_polices_p,
     },
     polices_e: {
       value: formatInt(kpi.polices_entreprises || 0),
-      pct: formatPercent(pct_polices_e, 2),
       rawValue: kpi.polices_entreprises || 0,
-      rawPct: pct_polices_e,
     },
+    pct_polices_p: { value: formatPercent(pct_polices_p, 2), rawValue: pct_polices_p },
+    pct_polices_e: { value: formatPercent(pct_polices_e, 2), rawValue: pct_polices_e },
     avg_policies_per_client: { value: formatDecimal(kpi.avg_polices_per_client || 0, 2), rawValue: kpi.avg_polices_per_client || 0 },
     avg_polices_p: { value: formatDecimal(kpi.avg_polices_per_client_p || 0, 2), rawValue: kpi.avg_polices_per_client_p || 0 },
     avg_polices_e: { value: formatDecimal(kpi.avg_polices_per_client_e || 0, 2), rawValue: kpi.avg_polices_per_client_e || 0 },
@@ -174,8 +175,10 @@ function rowDescriptors() {
     { key: 'pct_bi', label: t('report.ratio.pct_bi') },
     { key: 'pct_5plus', label: t('report.ratio.pct_5plus') },
     { key: 'total_policies', label: t('report.ratio.total_policies') },
-    { key: 'polices_p', label: t('report.ratio.polices_p'), isPoliciesSplit: true },
-    { key: 'polices_e', label: t('report.ratio.polices_e'), isPoliciesSplit: true },
+    { key: 'polices_p', label: t('report.ratio.polices_p') },
+    { key: 'pct_polices_p', label: t('report.ratio.pct_polices_p') },
+    { key: 'polices_e', label: t('report.ratio.polices_e') },
+    { key: 'pct_polices_e', label: t('report.ratio.pct_polices_e') },
     { key: 'avg_policies_per_client', label: t('report.ratio.avg_policies_per_client') },
     { key: 'avg_polices_p', label: t('report.ratio.avg_polices_p') },
     { key: 'avg_polices_e', label: t('report.ratio.avg_polices_e') },
@@ -225,10 +228,11 @@ export function buildRatiosSummary(arg, opts = {}) {
   const primary = valuesByCol[0];
   const descriptors = rowDescriptors();
 
-  // For the sinistres row, the label carries the current snapshot's reference
-  // year (analyzer exposes `sinistre_year`). Keeps parity with the reference
-  // rapport, where the row reads "Nombre de sinistres 2020" under the 2022
-  // column header.
+  // For the sinistres row, expose the current snapshot's reference year as a
+  // separate property so renderers can show it as a small subtitle (e.g.
+  // "Nombre de sinistres année précédente · 2018"). Previously we suffixed
+  // the year onto the label which made the row feel like "sinistres 2018"
+  // rather than "previous year (2018)".
   const sinYear = primary.nb_sinistres?.year;
 
   const rows = descriptors.map((d) => {
@@ -242,20 +246,19 @@ export function buildRatiosSummary(arg, opts = {}) {
         rawPct: v.rawPct ?? null,
       };
     });
-    const label = d.isSinistreYear && sinYear
-      ? `${d.label} ${sinYear}`
-      : d.label;
     // Flatten column-0 onto the row so older single-column callers still work.
     const first = values[0] || { value: '—' };
-    return {
+    const row = {
       key: d.key,
-      label,
+      label: d.label,
       value: first.value,
       pct: first.pct,
       rawValue: first.rawValue,
       rawPct: first.rawPct,
       values,
     };
+    if (d.isSinistreYear && sinYear) row.year = sinYear;
+    return row;
   });
 
   const boxes = {

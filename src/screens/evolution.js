@@ -87,6 +87,8 @@ const DIRECTION_GOODNESS = {
   total_policies: 'up_good',
   polices_p: 'up_good',
   polices_e: 'up_good',
+  pct_polices_p: 'neutral',
+  pct_polices_e: 'neutral',
   avg_policies_per_client: 'up_good',
   avg_polices_p: 'up_good',
   avg_polices_e: 'up_good',
@@ -110,6 +112,7 @@ const PERCENT_ROWS = new Set([
   'pct_sex_known', 'pct_age_known', 'pct_social_known', 'pct_civil_known',
   'pct_phone_known', 'pct_email_known', 'pct_mono', 'pct_bi', 'pct_5plus',
   'pct_vie', 'pct_auto', 'pct_incendie_pkg', 'freq_sinistres',
+  'pct_polices_p', 'pct_polices_e',
 ]);
 
 export function renderEvolution(root, ctx) {
@@ -164,14 +167,16 @@ export function renderEvolution(root, ctx) {
       class: 'card-info-btn',
       type: 'button',
       'aria-label': 'Info',
-      title: insight,
+      title: stripInsightMarkers(insight),
       onclick: (e) => {
         e.stopPropagation();
         const pop = e.currentTarget.nextElementSibling;
         if (pop) pop.classList.toggle('is-open');
       },
     }, icon('info.circle', { size: 16 }));
-    const infoPop = h('div', { class: 'card-info-popover', role: 'tooltip' }, insight);
+    const infoPop = h('div',
+      { class: 'card-info-popover card-info-popover-rich', role: 'tooltip' },
+      renderRichInsight(insight));
     return h('div', { class: 'dash-card evo-card' }, [
       h('div', { class: 'evo-card-head' }, [
         iconTile(metric.iconName, metric.tint, { size: 32, iconSize: 16 }),
@@ -244,14 +249,16 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
       class: 'card-info-btn',
       type: 'button',
       'aria-label': 'Info',
-      title: text,
+      title: stripInsightMarkers(text),
       onclick: (e) => {
         e.stopPropagation();
         const pop = e.currentTarget.nextElementSibling;
         if (pop) pop.classList.toggle('is-open');
       },
     }, icon('info.circle', { size: 14 }));
-    const pop = h('div', { class: 'card-info-popover', role: 'tooltip' }, text);
+    const pop = h('div',
+      { class: 'card-info-popover card-info-popover-rich', role: 'tooltip' },
+      renderRichInsight(text));
     return h('span', { class: 'card-head-info ratio-row-info' }, [btn, pop]);
   };
 
@@ -269,7 +276,10 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
   const bodyRows = rows.map((row) => {
     const labelInfo = insightFor(row);
     const labelCell = h('td', {}, h('div', { class: 'ratio-row-label' }, [
-      h('span', { class: 'ratio-row-text' }, row.label),
+      h('span', { class: 'ratio-row-text' }, [
+        row.label,
+        row.year ? h('span', { class: 'ratio-row-year' }, ` · ${row.year}`) : null,
+      ]),
       renderInfoBtn(labelInfo),
     ]));
 
@@ -323,6 +333,10 @@ function buildRatiosCard(seriesNewestFirst, ctx) {
     const pop = h('div', { class: 'card-info-popover', role: 'tooltip' }, desc);
     return h('div', { class: 'card-head' }, [
       h('h3', { class: 'card-h3' }, title),
+      h('span', { class: 'ratios-coaching-badge', title: t('evolution.ratios_coaching_hint') }, [
+        icon('info.circle', { size: 12 }),
+        h('span', {}, t('evolution.ratios_coaching_label')),
+      ]),
       h('div', { class: 'card-head-info' }, [btn, pop]),
     ]);
   })();
@@ -385,6 +399,76 @@ function formatSignedInt(n, locale) {
   const sign = n > 0 ? '+' : '';
   const formatted = Math.round(n).toLocaleString(locale || undefined);
   return sign + formatted;
+}
+
+// Parse a multi-line insight string into structured nodes for the popover.
+// Convention:
+//   - First non-marker line  → summary paragraph
+//   - "↑ ..." line           → "what going up means" bullet
+//   - "↓ ..." line           → "what going down means" bullet
+//   - "🛠 ..." line          → corrective-action callout
+// Falls back to plain text if no markers are present (back-compat for older
+// translations that haven't been restructured yet).
+function renderRichInsight(text) {
+  if (!text) return [];
+  const lines = String(text).split('\n').map((s) => s.trim()).filter(Boolean);
+  const summaryLines = [];
+  const ups = [];
+  const downs = [];
+  const actions = [];
+  for (const ln of lines) {
+    if (ln.startsWith('↑ ')) ups.push(ln.slice(2).trim());
+    else if (ln.startsWith('↓ ')) downs.push(ln.slice(2).trim());
+    else if (ln.startsWith('🛠 ')) actions.push(ln.slice(2).trim());
+    else if (ups.length === 0 && downs.length === 0 && actions.length === 0) {
+      summaryLines.push(ln);
+    } else {
+      // Trailing unmarked line: treat as additional summary at the end.
+      summaryLines.push(ln);
+    }
+  }
+
+  const out = [];
+  if (summaryLines.length) {
+    out.push(h('p', { class: 'rich-summary' }, summaryLines.join(' ')));
+  }
+  if (ups.length || downs.length) {
+    const items = [];
+    for (const u of ups) {
+      items.push(h('li', { class: 'rich-up' }, [
+        h('span', { class: 'rich-arrow' }, '▲'),
+        h('span', {}, u),
+      ]));
+    }
+    for (const d of downs) {
+      items.push(h('li', { class: 'rich-down' }, [
+        h('span', { class: 'rich-arrow' }, '▼'),
+        h('span', {}, d),
+      ]));
+    }
+    out.push(h('ul', { class: 'rich-moves' }, items));
+  }
+  if (actions.length) {
+    out.push(h('div', { class: 'rich-action' }, [
+      h('div', { class: 'rich-action-label' }, [
+        h('span', { class: 'rich-action-icon' }, '🛠'),
+        h('span', {}, t('evolution.ratio_insight.action_label')),
+      ]),
+      ...actions.map((a) => h('p', { class: 'rich-action-body' }, a)),
+    ]));
+  }
+  return out;
+}
+
+// Strip inline markers when rendering as a flat tooltip (browser native).
+function stripInsightMarkers(text) {
+  if (!text) return '';
+  return String(text)
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => s.replace(/^↑\s+/, '').replace(/^↓\s+/, '').replace(/^🛠\s+/, ''))
+    .join(' · ');
 }
 
 function deltaBadge(delta) {
