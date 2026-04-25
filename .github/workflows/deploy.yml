@@ -58,7 +58,7 @@ jobs:
             --exclude='*.xls' \
             --exclude='*.sqlite' \
             --exclude='*.db' \
-            --exclude='*.portefeuille' \
+            --exclude='*.ptf' \
             --exclude='__pycache__' \
             ./ _site/
           ls -la _site/

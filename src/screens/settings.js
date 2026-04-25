@@ -120,7 +120,7 @@ export function renderSettings(root, ctx) {
     if (state.busy) return;
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.ptf,.portefeuille,application/octet-stream';
+    input.accept = '.ptf,application/octet-stream';
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;

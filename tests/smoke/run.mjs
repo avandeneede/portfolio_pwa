@@ -87,13 +87,15 @@ await test('backup: round-trip with profile', async () => {
   assert(out.profile.company.vat === 'BE0.000', 'profile.company.vat round-trips');
 });
 
-await test('backup: legacy v1 blob (no PTFP header) still reads', async () => {
-  // Simulate a pre-v2 backup: plain DB bytes wrapped in the PORT v1 envelope.
+await test('backup: blob without PTFP magic is rejected', async () => {
+  // Pre-v2 backups (raw DB bytes inside the AES envelope) are no longer
+  // accepted. Decryption succeeds, but parsePayload bails on missing magic.
   const db = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
-  const blob = await encryptBlob(db, 'pw'); // PORT v1, plaintext = raw db
-  const out = await importEncrypted(blob, 'pw');
-  assert(out.db.length === db.length, 'legacy blob yields raw db bytes');
-  assert(out.profile === null, 'legacy blob has no profile');
+  const blob = await encryptBlob(db, 'pw');
+  let threw = false;
+  try { await importEncrypted(blob, 'pw'); }
+  catch (e) { threw = /PTFP/.test(e.message); }
+  assert(threw, 'importEncrypted rejects payload without PTFP magic');
 });
 
 // ---------------------------------------------------------------------------

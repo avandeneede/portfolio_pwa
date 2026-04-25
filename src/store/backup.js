@@ -2,24 +2,19 @@
 //
 // Flow:
 //   export:  { dbBytes, profile? } -> payload -> encryptBlob(passphrase) -> .ptf file
-//   import:  upload .ptf/.portefeuille -> decryptBlob(passphrase) -> parsePayload
+//   import:  upload .ptf -> decryptBlob(passphrase) -> parsePayload
 //            -> { db, profile }
 //
-// Payload format (v2), carried inside the AES-GCM plaintext:
+// Payload format, carried inside the AES-GCM plaintext:
 //   bytes 0..3   : magic "PTFP" (Portefeuille Payload)
 //   byte  4      : payload version (u8, currently 1)
 //   byte  5      : flags (bit 0 = profile present)
 //   bytes 6..9   : dbLen (u32 big-endian)
 //   bytes 10..   : db bytes, then UTF-8 JSON profile (if flag set)
-//
-// Legacy format (v1): the plaintext is the raw sqlite bytes. When we fail to
-// match the PTFP magic on decode, we treat the whole thing as the DB — this is
-// how pre-v2 backups (.portefeuille files) round-trip.
 
 import { encryptBlob, decryptBlob } from './crypto.js';
 
 const FILE_EXT = 'ptf';
-const LEGACY_EXT = 'portefeuille';
 const PAYLOAD_MAGIC = new TextEncoder().encode('PTFP'); // 4 bytes
 const PAYLOAD_VERSION = 1;
 const HEADER_LEN = PAYLOAD_MAGIC.length + 1 + 1 + 4; // magic+version+flags+dbLen
@@ -44,13 +39,12 @@ function buildPayload(dbBytes, profile) {
 }
 
 function parsePayload(bytes) {
-  // Legacy path: if bytes don't start with PTFP, treat them as raw DB bytes.
   if (bytes.length < HEADER_LEN
       || bytes[0] !== PAYLOAD_MAGIC[0]
       || bytes[1] !== PAYLOAD_MAGIC[1]
       || bytes[2] !== PAYLOAD_MAGIC[2]
       || bytes[3] !== PAYLOAD_MAGIC[3]) {
-    return { db: bytes, profile: null };
+    throw new Error('Invalid payload: missing PTFP magic');
   }
   const version = bytes[4];
   if (version !== PAYLOAD_VERSION) {
@@ -83,7 +77,8 @@ export async function exportEncrypted(dbBytes, passphrase, opts = {}) {
   return encryptBlob(payload, passphrase);
 }
 
-// Import. Always returns `{ db, profile }`. For legacy v1 blobs, `profile` is null.
+// Import. Returns `{ db, profile }` (profile may be null if the backup was
+// exported without one).
 export async function importEncrypted(blob, passphrase) {
   const pt = await decryptBlob(blob, passphrase);
   return parsePayload(pt);
@@ -108,4 +103,3 @@ export function downloadBlob(bytes, filename) {
 }
 
 export const BACKUP_EXT = FILE_EXT;
-export const LEGACY_BACKUP_EXT = LEGACY_EXT;
