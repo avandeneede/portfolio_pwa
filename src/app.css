@@ -1025,6 +1025,15 @@ button { font-family: inherit; }
   font-size: 12px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.04em;
 }
+.summary-box-head-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.summary-box-head-row .summary-box-head-title { min-width: 0; flex: 1; }
+.summary-box-head-row .card-info-btn { color: rgba(255,255,255,0.85); width: 18px; height: 18px; }
+.summary-box-head-row .card-info-btn:hover,
+.summary-box-head-row .card-info-btn:focus-visible {
+  color: #fff; background: rgba(255,255,255,0.15);
+}
 .summary-box-value {
   padding: 14px 16px 4px;
   font-size: 30px; font-weight: 700;

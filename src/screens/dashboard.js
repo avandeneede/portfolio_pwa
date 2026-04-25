@@ -263,9 +263,15 @@ function dashProgressBar(inPct, outPct, inLabel, outLabel) {
 }
 
 // Big-number summary card with a tinted header (like the print report boxes).
-function summaryBox(title, value, sub, tint) {
+function summaryBox(title, value, sub, tint, info) {
+  const head = info
+    ? h('div', { class: 'summary-box-head summary-box-head-row', style: `background:var(${tint});` }, [
+        h('span', { class: 'summary-box-head-title' }, title),
+        infoPopover(info),
+      ])
+    : h('div', { class: 'summary-box-head', style: `background:var(${tint});` }, title);
   return h('div', { class: 'summary-box' }, [
-    h('div', { class: 'summary-box-head', style: `background:var(${tint});` }, title),
+    head,
     h('div', { class: 'summary-box-value' }, value),
     sub ? h('div', { class: 'summary-box-sub' }, sub) : null,
   ]);
@@ -557,7 +563,8 @@ export function renderDashboard(root, ctx, args) {
       t('report.ratio.total_menages'),
       formatInt(kpiS.total_menages || 0),
       `${formatInt(kpiS.active_clients)} ${t('kpi.active_clients')}`,
-      '--warning'),
+      '--warning',
+      t('report.ratio.total_menages_info')),
     summaryBox(
       t('report.ratio.menages_mono'),
       formatInt(kpiS.menages_mono_police || 0),
@@ -1121,14 +1128,33 @@ export function renderDashboard(root, ctx, args) {
       ]),
     ]),
 
-    // Companies — unchanged.
+    // Companies — highlight the smallest set of insurers that together carry
+    // 50% or more of the policies. Concentration risk at a glance: if only
+    // two or three insurers make up half the book, a tariff hike or a broken
+    // partnership hits hard.
     card([
       cardHead(t('report.s5_companies'), t('report.s5_companies_info')),
       simpleTable(
         [{ label: t('report.company') },
          { label: t('report.policies_count'), align: 'right' },
          { label: '%', align: 'right' }],
-        topCompanies.map((c) => [c.name, formatInt(c.count), formatPercent(c.pct, 2)])
+        (() => {
+          let cumulative = 0;
+          let crossed = false;
+          return topCompanies.map((c) => {
+            const before = cumulative;
+            cumulative += c.pct || 0;
+            // Emphasize every row up to and including the one whose cumulative
+            // share first reaches 50%. Stop emphasizing after that — the rest
+            // is the long tail.
+            const emphasize = !crossed;
+            if (!crossed && cumulative >= 50 && before < 50) crossed = true;
+            return {
+              cells: [c.name, formatInt(c.count), formatPercent(c.pct, 2)],
+              emphasize,
+            };
+          });
+        })()
       ),
     ]),
   ]);

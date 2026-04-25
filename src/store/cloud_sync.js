@@ -36,10 +36,27 @@ export function isSyncSupported() {
 // Lets the user hand the encrypted backup to the OS share sheet, which on
 // iOS includes "Save to Files" → iCloud Drive. Not as seamless as FSA
 // (the user must tap a button each time) but it covers the one gap iOS has.
+//
+// Restricted to iOS / iPadOS / Android. macOS Safari implements the API but
+// its share sheet has no "Save to Files" entry — the screen ends up as
+// AirDrop / Mail / Messages / Copy, which is useless for backups. Desktop
+// users have File System Access (Chromium) or manual export/import.
+function isMobileShareTarget() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  // iPhone / iPod, classic iPad, and iPadOS in desktop-mode (which reports
+  // "Macintosh" + touch points, hence the maxTouchPoints fallback).
+  const isIOS = /iPhone|iPod|iPad/.test(ua)
+    || (ua.includes('Macintosh') && (navigator.maxTouchPoints || 0) > 1);
+  const isAndroid = /Android/.test(ua);
+  return isIOS || isAndroid;
+}
+
 export function isShareSyncSupported() {
   if (typeof navigator === 'undefined') return false;
   if (typeof navigator.share !== 'function') return false;
   if (typeof navigator.canShare !== 'function') return false;
+  if (!isMobileShareTarget()) return false;
   try {
     const probe = new File([new Uint8Array(1)], 'probe.ptf', { type: 'application/octet-stream' });
     return navigator.canShare({ files: [probe] });
