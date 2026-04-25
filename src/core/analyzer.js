@@ -253,6 +253,20 @@ function isRecurringAnnualPremium(cp) {
   return !NON_RECURRING_PERIODICITIES.has(per);
 }
 
+// "Vie et placements" (Branche 21/23) policies are life-insurance / investment
+// contracts. Their "Prime totale annuelle" column is not commensurable across
+// snapshots: brokers sometimes record lump-sum deposits as periodicity=Annuel
+// (e.g. the 02/2022 export contains €300k+ rows tagged Annuel that are really
+// one-shot investments), and per-snapshot Vie matching coverage swings wildly
+// (22% in 2019, 99% in 2022, 38% in 2025) which alone moves the dashboard total
+// by a factor of 2x. The reference rapport already separates IARD from Vie for
+// this reason. Exclude Vie rows from the dashboard's recurring-premium sums so
+// total_premium and avg_premium_per_client measure the IARD book consistently.
+function isNonVieDomain(cp) {
+  const dom = String(cp?.domaine ?? '').trim().toLowerCase();
+  return dom !== 'vie et placements';
+}
+
 // Policy types that, by themselves, mark a client as Entreprise (E) in the
 // reference rapport. Derived empirically from the 12/2019 snapshot by matching
 // CLIENT TOTAL's Type PE column: every type below is 100% E-coded in the ref
@@ -905,7 +919,10 @@ export function computeKpiSummary(clients, polices, compagniePolices, sinistres,
   let total_premium = 0;
   let total_commission = 0;
   for (const cp of compagniePolices) {
-    if (isRecurringAnnualPremium(cp)) {
+    // Premium: exclude Vie et placements (life/investment) and non-recurring
+    // periodicities. The Vie filter is what keeps cross-snapshot comparisons
+    // sane — see isNonVieDomain comment for the 2022 €300k smoking-gun row.
+    if (isNonVieDomain(cp) && isRecurringAnnualPremium(cp)) {
       total_premium += Number(cp.prime_totale_annuelle) || 0;
     }
     total_commission += Number(cp.commission_annuelle) || 0;
@@ -1013,6 +1030,8 @@ export function computeOpportunities(clients, polices, compagniePolices, snapsho
   for (const cp of compagniePolices) {
     const dk = cp.dossier_key;
     if (!dk) continue;
+    // Match the dashboard total_premium definition: IARD only, recurring only.
+    if (!isNonVieDomain(cp)) continue;
     if (!isRecurringAnnualPremium(cp)) continue;
     clientPremium.set(dk, (clientPremium.get(dk) || 0) + (Number(cp.prime_totale_annuelle) || 0));
   }
