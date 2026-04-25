@@ -60,10 +60,16 @@ export function h(tag, props = {}, children = []) {
  * @param {Object.<string, any>} styles
  */
 function applyStyle(el, styles) {
+  // CSSStyleDeclaration is typed property-by-property in lib.dom; dynamic
+  // camelCase keys can't be indexed without a cast. Narrow the cast to a
+  // string-indexed record (rather than `any`) and coerce value to string so
+  // the cast doesn't bypass type-checking on the value side.
+  /** @type {Record<string, string>} */
+  const style = /** @type {any} */ (el.style);
   for (const [k, v] of Object.entries(styles)) {
     if (v == null || v === false) continue;
     if (k.startsWith('--')) el.style.setProperty(k, String(v));
-    else /** @type {any} */ (el.style)[k] = v;
+    else style[k] = String(v);
   }
 }
 

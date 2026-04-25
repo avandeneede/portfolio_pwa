@@ -831,6 +831,11 @@ export function computePoliciesPerClient(clients, polices, branchIndex) {
 // display bucket (matches the reference "Pénétration des compagnies" table).
 // Each key matches a case-insensitive regex; first match wins. Unmatched names
 // pass through unchanged (uppercased) so new compagnies still show up.
+//
+// Typed as `Array<[RegExp, string]>` so destructuring `[re, alias]` infers the
+// pair without a per-iteration cast. TS otherwise widens nested array literals
+// to `(RegExp | string)[][]` and refuses the destructure as unsound.
+/** @type {Array<[RegExp, string]>} */
 const COMPAGNIE_ALIASES = [
   [/^axa\s+(belgium|ass?urance)/i,         'AXA'],
   [/^axa\s+assist/i,                        'AXA ASSISTANCE'],
@@ -868,9 +873,7 @@ const COMPAGNIE_ALIASES = [
 function canonicalizeCompagnie(raw) {
   const s = String(raw ?? '').trim();
   if (!s || s.toLowerCase() === 'none') return null;
-  for (const entry of COMPAGNIE_ALIASES) {
-    /** @type {[RegExp, string]} */
-    const [re, alias] = /** @type {any} */ (entry);
+  for (const [re, alias] of COMPAGNIE_ALIASES) {
     if (re.test(s)) return alias;
   }
   return s.toUpperCase();

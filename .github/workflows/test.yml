@@ -34,6 +34,9 @@ jobs:
       - name: Smoke (crypto + parser + db)
         run: node tests/smoke/run.mjs
 
+      - name: Unit tests (core/ helpers)
+        run: node tests/unit/run.mjs
+
       - name: Analyzer snapshot
         run: node tests/snapshot/run.mjs
 

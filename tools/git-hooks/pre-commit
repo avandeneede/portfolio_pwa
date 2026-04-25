@@ -1,21 +1,40 @@
 #!/usr/bin/env bash
 # Pre-commit hook for portfolio_pwa.
 #
-# Enforces invariants that are too easy to break by hand:
-#   1. APP_VERSION (src/version.js) and CACHE_VERSION (sw.js) stay in lockstep.
-#      Without this, the SW serves new code while the client still thinks it's
-#      the old version (no auto-reparse) — or vice-versa.
+# Enforces invariants that are too easy to break by hand. CI runs the same
+# gates plus the smoke suite; the pre-commit hook stops at the fast ones so
+# `git commit` stays under ~20 seconds wall-clock on a typical change.
+#
+#   1. Version lockstep: APP_VERSION (src/version.js) ↔ CACHE_VERSION (sw.js).
+#      Without this the SW serves new code while clients think it's the old
+#      version (no auto-reparse) — or vice-versa.
+#   2. Locale parity: fr/nl/en have the same key set, no empty values. A
+#      missing translation would otherwise ship as a French fallback in NL.
+#   3. tsc --noEmit over src/**/*.js. JSDoc-driven type checking; catches
+#      typos, wrong shapes, and undeclared identifiers locally instead of in CI.
+#   4. Unit tests for core/ helpers. Pure-function checks (pyRound,
+#      normalizeAddress, branch lookup, client overview, branches) so a
+#      regression in a primitive shows up here with a tight failure instead
+#      of a 200-line snapshot diff.
+#   5. Analyzer snapshot. The 18K-line baseline locks every derived metric;
+#      an accidental change to grouping/ratios surfaces here, not in prod.
 #
 # Install once via:
 #   tools/git-hooks/install.sh
 #
-# Bypass (use sparingly, you'll regret it):
+# Bypass (rare, intentional):
 #   git commit --no-verify
 
 set -e
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
+
+# Each gate prints its own success line on stdout (locales/snapshot already
+# do; release.mjs --check does too). We add a header and a hard-stop hint on
+# failure so `git commit` output is greppable for the failing gate.
+
+echo "pre-commit: running fast checks…"
 
 # 1. Version lockstep
 node tools/release.mjs --check || {
@@ -25,3 +44,47 @@ node tools/release.mjs --check || {
   echo "            or fix by hand and re-run 'node tools/release.mjs --check'."
   exit 1
 }
+
+# 2. Locale parity (fr/nl/en)
+node tests/locales/run.mjs || {
+  echo
+  echo "pre-commit: locale parity check failed."
+  echo "            Make sure every key in fr.json exists in nl.json and en.json"
+  echo "            with a non-empty translation."
+  exit 1
+}
+
+# 3. Type check via npx — keeps the no-package-json commitment intact.
+#    `--noEmit` plus tsconfig.json's `checkJs: true` reads JSDoc annotations
+#    and validates the JS without compiling.
+npx -y -p typescript@^6 tsc --noEmit || {
+  echo
+  echo "pre-commit: tsc --noEmit failed."
+  echo "            Fix the type errors above, or update JSDoc annotations."
+  exit 1
+}
+
+# 4. Unit tests for core/ helpers. Fast (<200ms), no fixtures.
+node tests/unit/run.mjs || {
+  echo
+  echo "pre-commit: unit tests failed."
+  echo "            Fix the broken assertion above, or update the test"
+  echo "            if the behavior change is intentional."
+  exit 1
+}
+
+# 5. Analyzer snapshot. Picks up any change in derived numbers (counts,
+#    ratios, grouping). If the change is intentional, run with --update,
+#    review the diff carefully, and re-commit.
+node tests/snapshot/run.mjs || {
+  echo
+  echo "pre-commit: analyzer snapshot drift detected."
+  echo "            If the change is intentional:"
+  echo "              1. node tests/snapshot/run.mjs --update"
+  echo "              2. git diff tests/snapshot/baseline.json   # REVIEW THIS"
+  echo "              3. git add tests/snapshot/baseline.json"
+  echo "              4. git commit"
+  exit 1
+}
+
+echo "pre-commit: all checks passed."

@@ -238,22 +238,32 @@ export function buildRatiosSummary(arg, opts = {}) {
   const sinYear = primary.nb_sinistres?.year;
 
   const rows = descriptors.map((d) => {
+    /**
+     * Per-column cell shape. Every entry in `values` is constructed below to
+     * match this exactly, regardless of whether the upstream `vbc[d.key]`
+     * existed — the `|| { value: '—' }` short-circuit gets normalized into
+     * the same four-field record. Hoisting the typedef means the `values[0]`
+     * dereference below has a real type instead of a discriminated union
+     * narrowing dance.
+     *
+     * @typedef {{ value: any, pct: any, rawValue: any, rawPct: any }} CellValue
+     */
+    /** @type {CellValue[]} */
     const values = valuesByCol.map((vbc) => {
       const v = vbc[d.key] || { value: '—' };
-      // Shape returned per-column.
       return {
         value: v.value,
-        pct: v.pct || null,
-        rawValue: v.rawValue ?? null,
-        rawPct: v.rawPct ?? null,
+        pct: ('pct' in v ? v.pct : null) || null,
+        rawValue: ('rawValue' in v ? v.rawValue : null) ?? null,
+        rawPct: ('rawPct' in v ? v.rawPct : null) ?? null,
       };
     });
-    // Flatten column-0 onto the row so older single-column callers still work.
-    // values[0] is always the per-column shape (value/pct/rawValue/rawPct);
-    // the `|| {value: '—'}` fallback is just defensive — if it ever fires it
-    // means the upstream column array is empty, which shouldn't happen.
-    /** @type {{value: any, pct: any, rawValue: any, rawPct: any}} */
-    const first = /** @type {any} */ (values[0] || { value: '—', pct: null, rawValue: null, rawPct: null });
+    // Flatten column-0 onto the row so older single-column callers still
+    // work. `values[0]` is the same CellValue shape as every other entry;
+    // the fallback is defensive — if it ever fires the upstream column
+    // array is empty, which shouldn't happen.
+    /** @type {CellValue} */
+    const first = values[0] || { value: '—', pct: null, rawValue: null, rawPct: null };
     const row = {
       key: d.key,
       section: d.section,

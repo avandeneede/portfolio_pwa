@@ -11,7 +11,7 @@ import { askPassphraseModal } from './ui/passphrase_modal.js';
 import { toast } from './ui/toast.js';
 import { renderShell, refreshSidebar, getContentRoot } from './ui/shell.js';
 import { ensureIconSprite } from './ui/icon.js';
-import { installGlobalErrorHandlers, logError } from './store/error_log.js';
+import { installGlobalErrorHandlers, logError, listErrors, formatEntry } from './store/error_log.js';
 // Home is the landing screen + the target of every fallback redirect.
 // Keep it eager so the boot path doesn't pay an extra round-trip for it.
 import { renderHome } from './screens/home.js';
@@ -336,18 +336,159 @@ bootstrap().catch((e) => {
   // Persist the boot failure too — most opaque "white screen of death"
   // reports come from this exact path.
   logError({ kind: 'bootstrap', message: e?.message || String(e), stack: e?.stack });
-  root.textContent = 'Failed to start: ' + e.message;
+  // Render a real diagnostic screen instead of a single line of text. When
+  // bootstrap fails we still want the user to (a) see *what* broke, (b)
+  // copy the last few entries to send us, and (c) try a hard reload before
+  // giving up. i18n may not have loaded — fall back to FR.
+  renderBootError(e).catch((re) => {
+    console.error('[boot-error] render failed', re);
+    root.textContent = 'Failed to start: ' + (e?.message || String(e));
+  });
 });
 
+// Boot error screen. Self-contained: no lazy imports, no router, no shell.
+// Designed to render even when most of the app failed to load.
+async function renderBootError(err) {
+  // Best-effort i18n. If setLocale ran before the failure, t() works; if not,
+  // we use the FR strings inline below.
+  const tt = (key, fallback) => {
+    try { const v = t(key); return v && v !== key ? v : fallback; }
+    catch { return fallback; }
+  };
+  const entries = await listErrors();
+  // Only show the last 5 — anything older is noise here, full list is in
+  // Settings → Diagnostics once the app comes back up.
+  const recent = entries.slice(0, 5);
+
+  // Build with createElement: no innerHTML, CSP-clean.
+  while (root.firstChild) root.removeChild(root.firstChild);
+  const wrap = document.createElement('div');
+  wrap.className = 'boot-error';
+
+  const h1 = document.createElement('h1');
+  h1.textContent = tt('boot.error.title', 'Échec du démarrage');
+  wrap.appendChild(h1);
+
+  const lead = document.createElement('p');
+  lead.className = 'boot-error-lead';
+  lead.textContent = tt('boot.error.lead',
+    'L\'application n\'a pas pu démarrer. Détails ci-dessous — copiez-les si vous nous contactez.');
+  wrap.appendChild(lead);
+
+  const msg = document.createElement('pre');
+  msg.className = 'boot-error-msg';
+  msg.textContent = (err?.message || String(err)) + '\n\n' + (err?.stack || '');
+  wrap.appendChild(msg);
+
+  const meta = document.createElement('p');
+  meta.className = 'boot-error-meta';
+  meta.textContent = `${tt('settings.storage.version', 'Version')} ${APP_VERSION} · ${navigator.userAgent}`;
+  wrap.appendChild(meta);
+
+  if (recent.length > 0) {
+    const h2 = document.createElement('h2');
+    h2.textContent = tt('boot.error.recent', 'Erreurs récentes');
+    wrap.appendChild(h2);
+    const list = document.createElement('div');
+    list.className = 'error-log-list';
+    for (const row of recent) {
+      const entry = document.createElement('div');
+      entry.className = 'error-log-entry';
+      const m = document.createElement('div');
+      m.className = 'error-log-meta';
+      m.textContent = `${new Date(row.ts).toISOString()} · ${row.kind} · v${row.version}`;
+      const t1 = document.createElement('div');
+      t1.className = 'error-log-msg';
+      t1.textContent = row.message;
+      entry.appendChild(m);
+      entry.appendChild(t1);
+      list.appendChild(entry);
+    }
+    wrap.appendChild(list);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'boot-error-actions';
+
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'btn primary';
+  copyBtn.textContent = tt('boot.error.copy', 'Copier les diagnostics');
+  copyBtn.addEventListener('click', async () => {
+    const blob = [
+      `App: portefeuille v${APP_VERSION}`,
+      `UA: ${navigator.userAgent}`,
+      `When: ${new Date().toISOString()}`,
+      '',
+      'Boot error:',
+      err?.message || String(err),
+      err?.stack || '',
+      '',
+      'Recent log:',
+      ...entries.slice(0, 20).map(formatEntry),
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(blob);
+      copyBtn.textContent = tt('boot.error.copied', 'Copié ✓');
+    } catch {
+      copyBtn.textContent = tt('boot.error.copy_failed', 'Échec de la copie');
+    }
+  });
+  actions.appendChild(copyBtn);
+
+  const reloadBtn = document.createElement('button');
+  reloadBtn.type = 'button';
+  reloadBtn.className = 'btn ghost';
+  reloadBtn.textContent = tt('boot.error.hard_reload', 'Recharger en force');
+  reloadBtn.addEventListener('click', async () => {
+    // Mirror the settings.js handleReloadLatest path: clear SW caches, force
+    // network on critical entry points, then replace location with a buster.
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister().catch(() => {})));
+      }
+      if (typeof caches !== 'undefined') {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k).catch(() => false)));
+      }
+      const critical = ['./', './index.html', './src/main.js', './src/version.js', './src/app.css', './sw.js'];
+      await Promise.all(critical.map((u) => fetch(u, { cache: 'reload' }).catch(() => {})));
+    } catch (_) { /* swallow — we still want to reload */ }
+    const bust = `?v=${Date.now()}`;
+    location.replace(location.pathname + bust + (location.hash || ''));
+  });
+  actions.appendChild(reloadBtn);
+
+  wrap.appendChild(actions);
+  root.appendChild(wrap);
+}
+
 // Register service worker (PWA).
-// When a new SW takes over this page, auto-reload so the user always runs
-// the latest code without needing a manual double-refresh.
+// When a new SW takes over this page we used to auto-reload. That's hostile
+// when the user is mid-edit (e.g. typing into Settings, reviewing a snapshot)
+// — the page just blinks away. Replace with a toast that lets the user choose
+// when to reload. The toast carries an action button (no auto-dismiss until
+// clicked or the page is replaced).
 if ('serviceWorker' in navigator) {
-  let reloading = false;
+  let prompted = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading) return;
-    reloading = true;
-    location.reload();
+    if (prompted) return;
+    prompted = true;
+    toast(t('app.update.available'), {
+      kind: 'info',
+      // 60s instead of the 4s default — long enough for the user to notice,
+      // short enough to vanish if they ignore it. The new SW is already
+      // active; next manual reload will pick it up regardless.
+      durationMs: 60000,
+      action: {
+        label: t('app.update.reload'),
+        onClick: () => {
+          // Cache buster so the browser HTTP cache can't serve a stale shell.
+          location.replace(location.pathname + `?v=${Date.now()}` + (location.hash || ''));
+        },
+      },
+    });
   });
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch((err) => {
