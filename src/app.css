@@ -2580,7 +2580,6 @@ button { font-family: inherit; }
 
 .chart-choropleth {
   width: 100%;
-  max-width: 720px;
   height: auto;
   display: block;
   cursor: grab;

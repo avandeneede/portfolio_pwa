@@ -42,11 +42,12 @@ const OLD_OUT_PATH = OUT_PATH;  // re-read for dual-name fallback
 
 // SVG viewBox width. Height is derived from Belgium's aspect ratio.
 const VW = 1000;
-// Decimate every Nth point on each ring + min-distance threshold (in SVG
-// units). Belgium's bbox at viewBox 1000 wide ≈ 3.8 px/km; below 1px is
-// sub-pixel and contributes no visible detail.
-const DECIMATE = 3;
-const MIN_DIST = 0.6;
+// Snap projected vertices to a regular grid so neighbouring polygons that
+// originally shared a border end up using identical coordinates — otherwise
+// per-polygon decimation produces hairline gaps between communes that are
+// very visible when zoomed in. Grid step is in SVG units; at VW=1000 across
+// ~280km, 0.5 unit ≈ 140 m which is finer than any commune detail we render.
+const VW_GRID = 0.5;
 const MIN_RING_POINTS = 4;
 
 function dec2(n) { return Math.round(n * 100) / 100; }
@@ -279,19 +280,29 @@ async function main() {
     arr.push(p);
   }
 
+  // Snap each projected (x,y) to a fixed grid then drop consecutive duplicates.
+  // Grid snapping is what fixes the hairline-holes-when-zoomed problem: two
+  // neighbouring polygons that should share a border edge will now snap their
+  // overlapping vertices to the *same* grid cell and produce identical line
+  // segments, so the borders meet exactly. Dropping consecutive duplicates is
+  // a side benefit (acts as decimation, keeps the file small).
+  const snap = (v) => Math.round(v / VW_GRID) * VW_GRID;
   function simplify(ring) {
     const out = [];
     let lastX = NaN, lastY = NaN;
     for (let i = 0; i < ring.length; i++) {
-      const isLast = i === ring.length - 1;
-      if (i !== 0 && !isLast && i % DECIMATE !== 0) continue;
-      const [x, y] = ring[i];
-      if (!isLast && !Number.isNaN(lastX)) {
-        const dx = x - lastX, dy = y - lastY;
-        if (dx * dx + dy * dy < MIN_DIST * MIN_DIST) continue;
-      }
-      out.push([x, y]);
-      lastX = x; lastY = y;
+      const sx2 = snap(ring[i][0]);
+      const sy2 = snap(ring[i][1]);
+      if (sx2 === lastX && sy2 === lastY) continue;
+      out.push([sx2, sy2]);
+      lastX = sx2; lastY = sy2;
+    }
+    // First and last point of a ring should match (ring is closed). After
+    // snapping the first/last may have diverged slightly — re-close.
+    if (out.length >= 2) {
+      const [fx, fy] = out[0];
+      const [lx, ly] = out[out.length - 1];
+      if (fx !== lx || fy !== ly) out.push([fx, fy]);
     }
     return out;
   }

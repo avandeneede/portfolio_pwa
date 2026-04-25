@@ -135,7 +135,12 @@ export function municipalityChoropleth(args) {
       d: f.d,
       fill: colorFor(count, max),
       stroke: 'var(--choropleth-stroke)',
-      'stroke-width': 0.4,
+      'stroke-width': 0.5,
+      // non-scaling-stroke keeps borders at a constant on-screen thickness
+      // when the user zooms (otherwise strokes scale with the transform and
+      // become very fat at high zoom levels — and any sub-grid gap between
+      // polygons gets visually amplified at the same time).
+      'vector-effect': 'non-scaling-stroke',
       'data-cp': f.cp,
       'data-name': lang === 'nl' ? f.name_nl : f.name_fr,
       'data-count': count,
