@@ -2790,9 +2790,22 @@ button { font-family: inherit; }
 }
 .choropleth-legend-labels {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   color: var(--text-2);
+}
+/* Match .choropleth-legend-swatch.is-empty (18px + 4px right margin) so the
+ * "0" label sits centered under the grey "no clients" square. */
+.choropleth-legend-empty-label {
+  flex: 0 0 18px;
+  margin-right: 4px;
+  text-align: center;
+}
+.choropleth-legend-gradient-labels {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
 }
 
 /* Unmapped-note: small text below the legend, also as an overlay. */

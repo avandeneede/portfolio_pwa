@@ -359,14 +359,27 @@ export function choroplethLegend({ max, t }) {
   swatches.appendChild(gradient);
   wrap.appendChild(swatches);
 
+  // Labels row mirrors the swatches row: a fixed slot under the empty swatch
+  // (so its label sits directly under the grey square) and a flex sub-row
+  // under the gradient with min/max anchored to its actual edges. Without
+  // this mirroring the "1" landed under the empty swatch instead of the
+  // gradient start.
   const labels = document.createElement('div');
   labels.className = 'choropleth-legend-labels';
+  const emptyLabel = document.createElement('span');
+  emptyLabel.className = 'choropleth-legend-empty-label';
+  emptyLabel.textContent = '0';
+  emptyLabel.title = t('choropleth.tip.no_clients');
+  const gradLabels = document.createElement('span');
+  gradLabels.className = 'choropleth-legend-gradient-labels';
   const left = document.createElement('span');
   left.textContent = max > 0 ? '1' : '0';
   const right = document.createElement('span');
   right.textContent = max > 0 ? String(max) : '';
-  labels.appendChild(left);
-  labels.appendChild(right);
+  gradLabels.appendChild(left);
+  gradLabels.appendChild(right);
+  labels.appendChild(emptyLabel);
+  labels.appendChild(gradLabels);
   wrap.appendChild(labels);
   return wrap;
 }
