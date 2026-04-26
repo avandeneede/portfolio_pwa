@@ -1227,7 +1227,7 @@ button { font-family: inherit; }
   justify-content: space-between; gap: 8px;
 }
 .summary-box-head-row .summary-box-head-title { min-width: 0; flex: 1; }
-.summary-box-head-row .card-info-btn { color: rgba(255,255,255,0.85); width: 18px; height: 18px; }
+.summary-box-head-row .card-info-btn { color: rgba(255,255,255,0.85); }
 .summary-box-head-row .card-info-btn:hover,
 .summary-box-head-row .card-info-btn:focus-visible {
   color: #fff; background: rgba(255,255,255,0.15);
@@ -2612,7 +2612,6 @@ button { font-family: inherit; }
  * top of any map content; legend, controls, tooltip and unmapped-note are
  * absolute-positioned overlays on top of the map. */
 .card-choropleth {
-  margin-top: 12px;
   padding: 0;
   overflow: hidden;
 }
@@ -2629,8 +2628,9 @@ button { font-family: inherit; }
   position: relative;
   width: 100%;
   /* Belgium's projected aspect (1000 wide × 817 tall) — the host follows it
-   * so the SVG fills the box without letterboxing. On very tall screens we
-   * still rely on the card's overflow:hidden to clip to the rounded border. */
+   * so the SVG fills the box without letterboxing. On wide desktops we
+   * override to a shorter ratio (see below) so the card doesn't dominate
+   * the viewport with mostly-empty map margins. */
   aspect-ratio: 1000 / 817;
   background: var(--card);
   overflow: hidden;
@@ -2643,6 +2643,13 @@ button { font-family: inherit; }
   display: flex;
   align-items: center;
   justify-content: center;
+}
+/* Desktop: halve the card height. The SVG keeps Belgium's true 1000×817
+ * aspect via preserveAspectRatio="xMidYMid meet" and centers itself within
+ * the wider, shorter box. The wider zoomable area is a feature: more room
+ * to drag/pan without resizing the map. */
+@media (min-width: 821px) {
+  .choropleth-host { aspect-ratio: 1000 / 410; }
 }
 
 .chart-choropleth {

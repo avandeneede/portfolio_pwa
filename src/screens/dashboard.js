@@ -54,7 +54,7 @@ function infoPopover(text) {
       e.stopPropagation();
       togglePopover(e.currentTarget);
     },
-  }, icon('info.circle', { size: 14 }));
+  }, icon('info.circle', { size: 16 }));
   const pop = h('div',
     { class: 'card-info-popover card-info-popover-rich', role: 'tooltip' },
     renderInfoText(text, { actionLabel: t('evolution.ratio_insight.action_label') }));
