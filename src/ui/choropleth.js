@@ -373,7 +373,7 @@ export function choroplethLegend({ max, t }) {
   emptySwatch.className = 'choropleth-legend-swatch is-empty';
   const emptyLabel = document.createElement('span');
   emptyLabel.className = 'choropleth-legend-empty-text';
-  emptyLabel.textContent = t('choropleth.tip.no_clients');
+  emptyLabel.textContent = t('choropleth.tip.no_clients') || 'No clients';
   emptyRow.appendChild(emptySwatch);
   emptyRow.appendChild(emptyLabel);
   wrap.appendChild(emptyRow);

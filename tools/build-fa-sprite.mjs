@@ -58,6 +58,8 @@ const MAP = {
   // People / objects
   'person.2': 'users',
   'person.crop.circle': 'circle-user',
+  'mars': 'mars',
+  'venus': 'venus',
   'building.2': 'building',
   'wand.and.stars': 'wand-magic-sparkles',
   'shield.checkmark': 'shield-halved',

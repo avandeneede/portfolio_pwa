@@ -859,12 +859,12 @@ export async function renderDashboard(root, ctx, args) {
             [
               {
                 key: 'sex:M',
-                cells: [rowIcon('person.crop.circle', '--indigo', t('demo.male')),
+                cells: [rowIcon('mars', '--indigo', t('demo.male')),
                   formatInt(M.count), formatPercent(M.pct, 1)],
               },
               {
                 key: 'sex:F',
-                cells: [rowIcon('person.crop.circle', '--pink', t('demo.female')),
+                cells: [rowIcon('venus', '--pink', t('demo.female')),
                   formatInt(F.count), formatPercent(F.pct, 1)],
               },
               {
