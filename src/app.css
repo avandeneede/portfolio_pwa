@@ -2765,11 +2765,6 @@ button { font-family: inherit; }
   z-index: 3;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
-.choropleth-legend-swatches {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
 .choropleth-legend-swatch {
   display: inline-block;
   height: 10px;
@@ -2778,34 +2773,29 @@ button { font-family: inherit; }
 }
 .choropleth-legend-swatch.is-empty {
   background: var(--choropleth-empty);
-  flex: 0 0 18px;
-  margin-right: 4px;
+  width: 14px;
+  flex: 0 0 14px;
 }
 .choropleth-legend-gradient {
-  display: inline-block;
-  flex: 1;
+  display: block;
+  width: 100%;
   height: 10px;
   border-radius: 2px;
   border: 0.5px solid var(--separator);
 }
 .choropleth-legend-labels {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  justify-content: space-between;
   font-size: 11px;
   color: var(--text-2);
 }
-/* Match .choropleth-legend-swatch.is-empty (18px + 4px right margin) so the
- * "0" label sits centered under the grey "no clients" square. */
-.choropleth-legend-empty-label {
-  flex: 0 0 18px;
-  margin-right: 4px;
-  text-align: center;
-}
-.choropleth-legend-gradient-labels {
-  flex: 1;
+.choropleth-legend-empty-row {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-2);
 }
 
 /* Unmapped-note: small text below the legend, also as an overlay. */

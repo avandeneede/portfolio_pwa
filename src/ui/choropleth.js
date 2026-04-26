@@ -338,12 +338,9 @@ export function choroplethLegend({ max, t }) {
   const wrap = document.createElement('div');
   wrap.className = 'choropleth-legend';
 
-  const swatches = document.createElement('div');
-  swatches.className = 'choropleth-legend-swatches';
-  const empty = document.createElement('span');
-  empty.className = 'choropleth-legend-swatch is-empty';
-  empty.title = t('choropleth.tip.no_clients');
-  swatches.appendChild(empty);
+  // Top row: gradient bar only (no leading empty swatch — that was visually
+  // ambiguous because the "1" label landed under the empty square instead of
+  // the gradient's left edge). Min/max sit directly below the bar.
   const gradient = document.createElement('span');
   gradient.className = 'choropleth-legend-gradient';
   // Linear gradient driven by the same OKLCH-mixed end-stops we use for the
@@ -356,31 +353,31 @@ export function choroplethLegend({ max, t }) {
     stops.push(`color-mix(in oklch, var(${LOW_VAR}), var(${HIGH_VAR}) ${pct}%) ${(t * 100).toFixed(0)}%`);
   }
   gradient.style.background = `linear-gradient(to right, ${stops.join(', ')})`;
-  swatches.appendChild(gradient);
-  wrap.appendChild(swatches);
+  wrap.appendChild(gradient);
 
-  // Labels row mirrors the swatches row: a fixed slot under the empty swatch
-  // (so its label sits directly under the grey square) and a flex sub-row
-  // under the gradient with min/max anchored to its actual edges. Without
-  // this mirroring the "1" landed under the empty swatch instead of the
-  // gradient start.
   const labels = document.createElement('div');
   labels.className = 'choropleth-legend-labels';
-  const emptyLabel = document.createElement('span');
-  emptyLabel.className = 'choropleth-legend-empty-label';
-  emptyLabel.textContent = '0';
-  emptyLabel.title = t('choropleth.tip.no_clients');
-  const gradLabels = document.createElement('span');
-  gradLabels.className = 'choropleth-legend-gradient-labels';
   const left = document.createElement('span');
   left.textContent = max > 0 ? '1' : '0';
   const right = document.createElement('span');
   right.textContent = max > 0 ? String(max) : '';
-  gradLabels.appendChild(left);
-  gradLabels.appendChild(right);
-  labels.appendChild(emptyLabel);
-  labels.appendChild(gradLabels);
+  labels.appendChild(left);
+  labels.appendChild(right);
   wrap.appendChild(labels);
+
+  // Separate row for the categorical "no data" key. Decoupling it from the
+  // continuous scale makes both rows trivially correct alignment-wise.
+  const emptyRow = document.createElement('div');
+  emptyRow.className = 'choropleth-legend-empty-row';
+  const emptySwatch = document.createElement('span');
+  emptySwatch.className = 'choropleth-legend-swatch is-empty';
+  const emptyLabel = document.createElement('span');
+  emptyLabel.className = 'choropleth-legend-empty-text';
+  emptyLabel.textContent = t('choropleth.tip.no_clients');
+  emptyRow.appendChild(emptySwatch);
+  emptyRow.appendChild(emptyLabel);
+  wrap.appendChild(emptyRow);
+
   return wrap;
 }
 
